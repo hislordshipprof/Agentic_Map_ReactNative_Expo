@@ -1,0 +1,92 @@
+﻿# ===================================
+# Agentic Mobile Map - Root .gitignore
+# ===================================
+
+# Documentation (private specifications)
+docs/
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment Variables (sensitive)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+!.env.example
+
+# Security & Certificates (sensitive)
+*.key
+*.pem
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+*.keystore
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Build Output
+build/
+out/
+.next/
+
+# Testing
+coverage/
+*.lcov
+.nyc_output
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+lerna-debug.log*
+
+# Operating System
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE & Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.history/
+
+# TypeScript
+*.tsbuildinfo
+.tsbuildinfo
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Metro bundler (React Native)
+.metro-health-check*
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Production
+/dist
