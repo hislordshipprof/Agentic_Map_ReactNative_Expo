@@ -257,12 +257,14 @@ export const TypographyUtils = {
 
   /**
    * Get font configuration for expo-font
+   * Note: DM Sans package only includes 400, 500, 700 weights.
+   * We use 700 (Bold) as fallback for SemiBold (600).
    * @returns Font map for useFonts hook
    */
   getFontConfig: () => ({
     'DMSans-Regular': require('@expo-google-fonts/dm-sans').DMSans_400Regular,
     'DMSans-Medium': require('@expo-google-fonts/dm-sans').DMSans_500Medium,
-    'DMSans-SemiBold': require('@expo-google-fonts/dm-sans').DMSans_600SemiBold,
+    'DMSans-SemiBold': require('@expo-google-fonts/dm-sans').DMSans_700Bold, // Using Bold as SemiBold fallback
     'DMSans-Bold': require('@expo-google-fonts/dm-sans').DMSans_700Bold,
   }),
 } as const;

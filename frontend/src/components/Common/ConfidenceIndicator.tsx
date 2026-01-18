@@ -155,6 +155,17 @@ export const ConfidenceIndicator: React.FC<ConfidenceIndicatorProps> = ({
 };
 
 /**
+ * Shadow style (defined separately to avoid circular reference)
+ */
+const shadowStyle = {
+  shadowColor: Colors.effects.shadow,
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.2,
+  shadowRadius: 2,
+  elevation: 2,
+};
+
+/**
  * Styles
  */
 const styles = StyleSheet.create({
@@ -165,7 +176,7 @@ const styles = StyleSheet.create({
   },
   dot: {
     borderRadius: Layout.radiusFull,
-    ...styles.shadow,
+    ...shadowStyle,
   },
   dotSmall: {
     width: 8,
@@ -184,13 +195,6 @@ const styles = StyleSheet.create({
   },
   value: {
     fontWeight: '600',
-  },
-  shadow: {
-    shadowColor: Colors.effects.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
   },
 });
 

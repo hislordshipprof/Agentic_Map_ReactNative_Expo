@@ -13,7 +13,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
-import { Colors, ColorUtils, TextStyles, Spacing, Layout } from '@/theme';
+import { ColorUtils, TextStyles, Spacing, Layout } from '@/theme';
 import type { DetourStatus } from '@/theme/colors';
 
 /**

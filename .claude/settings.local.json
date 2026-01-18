@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e:*)",
+      "Bash(cat:*)",
+      "Skill(expo-app-design)",
+      "Bash(npx expo install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(dir:*)"
+    ]
+  }
+}

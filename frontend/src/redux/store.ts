@@ -1,28 +1,33 @@
 import { configureStore } from '@reduxjs/toolkit';
+import {
+  authReducer,
+  conversationReducer,
+  routeReducer,
+  nluReducer,
+  uiReducer,
+  offlineReducer,
+} from './slices';
 
 /**
  * Redux Store Configuration
  *
  * Per requirements-frontend.md Phase 1.4:
- * Main state slices to be implemented:
- * - conversationSlice: Messages, loading state, errors
- * - routeSlice: Confirmed/pending routes, waypoints, stops
- * - nluSlice: Intent, confidence, entities
- * - uiSlice: Dialog visibility, modes
- * - userSlice: Anchors, preferences
- * - offlineSlice: Network status, sync state
- *
- * This is a minimal placeholder that will be expanded in Chunk 4-7.
+ * All state slices implemented:
+ * - auth: User authentication and session
+ * - conversation: Messages, loading state, errors
+ * - route: Confirmed/pending routes, waypoints, stops
+ * - nlu: Intent, confidence, entities
+ * - ui: Dialog visibility, modes, toasts
+ * - offline: Network status, sync state
  */
 export const store = configureStore({
   reducer: {
-    // Slices will be added in subsequent chunks
-    // conversation: conversationReducer,
-    // route: routeReducer,
-    // nlu: nluReducer,
-    // ui: uiReducer,
-    // user: userReducer,
-    // offline: offlineReducer,
+    auth: authReducer,
+    conversation: conversationReducer,
+    route: routeReducer,
+    nlu: nluReducer,
+    ui: uiReducer,
+    offline: offlineReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

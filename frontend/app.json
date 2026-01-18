@@ -49,8 +49,7 @@
     },
     "plugins": [
       "expo-router",
-      "expo-location",
-      "expo-sqlite"
+      "expo-location"
     ],
     "experiments": {
       "typedRoutes": true

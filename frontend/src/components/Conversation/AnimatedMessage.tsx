@@ -11,12 +11,13 @@
  */
 
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ViewStyle, TextStyle } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
+  withDelay,
   Easing,
 } from 'react-native-reanimated';
 import { Colors, TextStyles, Spacing, Layout, SpringConfig } from '@/theme';
@@ -69,24 +70,22 @@ export const AnimatedMessage: React.FC<AnimatedMessageProps> = ({
 
   // Entrance animation on mount
   useEffect(() => {
-    const delay = index * 30; // Stagger by 30ms
+    const staggerDelay = index * 30; // Stagger by 30ms
 
-    opacity.value = withTiming(1, {
-      duration: 300,
-      delay,
-      easing: Easing.out(Easing.cubic),
-    });
+    opacity.value = withDelay(
+      staggerDelay,
+      withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) })
+    );
 
-    translateX.value = withSpring(0, {
-      ...SpringConfig.gentle,
-      delay,
-    });
+    translateX.value = withDelay(
+      staggerDelay,
+      withSpring(0, SpringConfig.gentle)
+    );
 
-    translateY.value = withTiming(0, {
-      duration: 300,
-      delay,
-      easing: Easing.out(Easing.cubic),
-    });
+    translateY.value = withDelay(
+      staggerDelay,
+      withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) })
+    );
   }, [index]);
 
   // Animated style
@@ -146,7 +145,18 @@ export const AnimatedMessage: React.FC<AnimatedMessageProps> = ({
 };
 
 /**
- * Styles
+ * Shadow style (defined separately to avoid circular reference)
+ */
+const shadowStyle = {
+  shadowColor: Colors.effects.shadowDeep,
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.3,
+  shadowRadius: 8,
+  elevation: Layout.elevationMedium,
+};
+
+/**
+ * Styles - Dark theme with teal accents
  */
 const styles = StyleSheet.create({
   container: {
@@ -165,44 +175,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
     borderRadius: Layout.radiusLarge,
-    ...styles.shadow,
+    ...shadowStyle,
   },
   userBubble: {
-    backgroundColor: Colors.ui.userMessage,
+    // Teal gradient for user messages
+    backgroundColor: Colors.primary.teal,
     borderBottomRightRadius: Spacing.xs,
   },
   systemBubble: {
-    backgroundColor: Colors.ui.systemMessage,
+    // Dark glassmorphism for system messages
+    backgroundColor: Colors.effects.glassDark,
+    borderWidth: 1,
+    borderColor: Colors.effects.glassDarkBorder,
     borderBottomLeftRadius: Spacing.xs,
   },
   text: {
     ...TextStyles.messageBubble,
   },
   userText: {
-    color: Colors.ui.text.onPrimary,
+    color: Colors.dark.text.primary,
   },
   systemText: {
-    color: Colors.ui.text.primary,
+    color: Colors.dark.text.primary,
   },
   timestamp: {
     ...TextStyles.timestamp,
     marginTop: Spacing.xs,
   },
   userTimestamp: {
-    color: Colors.ui.text.onPrimary,
-    opacity: 0.8,
+    color: Colors.dark.text.primary,
+    opacity: 0.7,
     textAlign: 'right',
   },
   systemTimestamp: {
-    color: Colors.ui.text.tertiary,
+    color: Colors.dark.text.tertiary,
     textAlign: 'left',
-  },
-  shadow: {
-    shadowColor: Colors.effects.shadow,
-    shadowOffset: Layout.shadowOffset,
-    shadowOpacity: Layout.shadowOpacity,
-    shadowRadius: Layout.shadowRadius,
-    elevation: Layout.elevationLow,
   },
 });
 
