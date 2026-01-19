@@ -38,8 +38,8 @@ export default function Index() {
   // Show loading while checking storage
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.ui.background }}>
-        <ActivityIndicator size="large" color={Colors.primary.blue} />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.dark.background }}>
+        <ActivityIndicator size="large" color={Colors.primary.teal} />
       </View>
     );
   }

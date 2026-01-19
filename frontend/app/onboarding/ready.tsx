@@ -1,17 +1,20 @@
-/**
- * Onboarding Screen 3: Ready
- * 
- * Final screen with CTA to start using the app
- * "Optimize in 1-2 turns"
- */
+/** Onboarding 3: Navigate with Ease – journey at a glance, Get Started. */
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import { Colors, TextStyles, Spacing, Layout, TouchTarget } from '@/theme';
+import Animated, { FadeIn, FadeInDown, SlideInUp } from 'react-native-reanimated';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  Colors,
+  FontFamily,
+  FontSize,
+  Spacing,
+  Layout,
+} from '@/theme';
+import { Skip, PaginationDots, OnboardingCta, RouteGridCard } from '@/components/Onboarding';
 
 const ONBOARDING_KEY = '@agentic_map:onboarding_complete';
 
@@ -20,169 +23,150 @@ export default function ReadyScreen() {
 
   const handleGetStarted = async () => {
     try {
-      // Mark onboarding as complete
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-    } catch (error) {
-      console.warn('Error saving onboarding status:', error);
+    } catch {
+      // ignore
     }
-    // Navigate to main app
+    router.replace('/(tabs)');
+  };
+
+  const handleSkip = async () => {
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch {
+      // ignore
+    }
     router.replace('/(tabs)');
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Animated.View 
-        style={styles.content}
-        entering={FadeInDown.duration(600).delay(200)}
-      >
-        {/* Icon/Illustration placeholder */}
-        <View style={styles.iconContainer}>
-          <Text style={styles.icon}>🚀</Text>
-        </View>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <View style={styles.inner}>
+        <Skip onPress={handleSkip} />
 
-        {/* Title */}
-        <Text style={styles.title}>Optimize in 1-2 Turns</Text>
-
-        {/* Description */}
-        <Text style={styles.description}>
-          No more manual planning. Say what you need, and we'll create the perfect route.
-        </Text>
-
-        {/* Value proposition */}
-        <View style={styles.valueCard}>
-          <View style={styles.valueRow}>
-            <Text style={styles.oldWay}>5-6 manual steps</Text>
-            <Text style={styles.arrow}>→</Text>
-            <Text style={styles.newWay}>1-2 turns</Text>
-          </View>
-        </View>
-
-        {/* CTA Button */}
-        <TouchableOpacity 
-          style={styles.button}
-          onPress={handleGetStarted}
-          activeOpacity={0.8}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.buttonText}>Get Started</Text>
-        </TouchableOpacity>
-      </Animated.View>
+          <Animated.Text
+            entering={FadeInDown.duration(400).delay(60)}
+            style={styles.title}
+          >
+            Navigate with Ease
+          </Animated.Text>
 
-      {/* Progress indicator */}
-      <View style={styles.footer}>
-        <View style={styles.pagination}>
-          <View style={styles.dot} />
-          <View style={styles.dot} />
-          <View style={[styles.dot, styles.dotActive]} />
-        </View>
+          <Animated.Text
+            entering={FadeInDown.duration(400).delay(140)}
+            style={styles.subtitle}
+          >
+            See your entire journey at a glance.{'\n'}Every stop, perfectly planned.
+          </Animated.Text>
+
+          <RouteGridCard />
+
+          <Animated.View
+            entering={SlideInUp.springify().damping(18).stiffness(120).delay(400)}
+            style={styles.journeyCard}
+          >
+            <View style={styles.journeyLeft}>
+              <Ionicons name="navigate" size={24} color={Colors.primary.teal} style={styles.journeyIcon} />
+              <View>
+                <Text style={styles.journeyTitle}>Your Journey</Text>
+                <View style={styles.journeyMeta}>
+                  <Ionicons name="time-outline" size={14} color={Colors.dark.text.secondary} />
+                  <Text style={styles.journeyMetaText}>22 min</Text>
+                </View>
+                <Text style={styles.journeyMetaText}>4 stops • miles</Text>
+              </View>
+            </View>
+            <OnboardingCta label="Get Started" onPress={handleGetStarted} />
+          </Animated.View>
+        </ScrollView>
+
+        <Animated.View entering={FadeIn.duration(300).delay(480)} style={styles.footer}>
+          <PaginationDots activeStep={3} />
+        </Animated.View>
       </View>
     </SafeAreaView>
   );
 }
 
-// Shadow style (defined separately to avoid circular reference)
-const buttonShadow = {
-  shadowColor: Colors.primary.blue,
-  shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.3,
-  shadowRadius: 8,
-  elevation: 4,
-};
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.ui.background,
+    backgroundColor: Colors.dark.background,
   },
-  content: {
+  inner: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: Spacing['2xl'],
   },
-  iconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: Layout.radiusFull,
-    backgroundColor: Colors.semantic.success,
-    opacity: 0.2,
-    justifyContent: 'center',
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing['4xl'],
+    paddingBottom: Spacing.xl,
     alignItems: 'center',
-    marginBottom: Spacing['2xl'],
-  },
-  icon: {
-    fontSize: 64,
   },
   title: {
-    ...TextStyles.h1,
-    color: Colors.ui.text.primary,
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize['3xl'],
+    fontWeight: '700',
+    color: Colors.dark.text.primary,
     textAlign: 'center',
     marginBottom: Spacing.base,
   },
-  description: {
-    ...TextStyles.bodyLarge,
-    color: Colors.ui.text.secondary,
+  subtitle: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.base,
+    color: Colors.dark.text.secondary,
     textAlign: 'center',
-    marginBottom: Spacing['2xl'],
-    lineHeight: 24,
+    lineHeight: 22,
+    marginBottom: Spacing.xl,
   },
-  valueCard: {
-    backgroundColor: Colors.ui.surface,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.lg,
-    borderRadius: Layout.radiusLarge,
-    marginBottom: Spacing['2xl'],
-  },
-  valueRow: {
+  journeyCard: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.base,
-  },
-  oldWay: {
-    ...TextStyles.body,
-    color: Colors.ui.text.tertiary,
-    textDecorationLine: 'line-through',
-  },
-  arrow: {
-    ...TextStyles.h3,
-    color: Colors.primary.blue,
-  },
-  newWay: {
-    ...TextStyles.bodyBold,
-    color: Colors.semantic.success,
-    fontSize: 18,
-  },
-  button: {
-    backgroundColor: Colors.primary.blue,
-    paddingHorizontal: Spacing['3xl'],
-    paddingVertical: Spacing.base,
+    justifyContent: 'space-between',
+    backgroundColor: Colors.effects.glassDark,
+    borderWidth: 1,
+    borderColor: Colors.effects.glassDarkBorder,
     borderRadius: Layout.radiusLarge,
-    minHeight: TouchTarget.minAndroid,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-    maxWidth: 300,
-    ...buttonShadow,
+    padding: Spacing.lg,
+    marginTop: Spacing.xl,
+    gap: Spacing.md,
   },
-  buttonText: {
-    ...TextStyles.buttonLarge,
-    color: Colors.ui.text.onPrimary,
+  journeyLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  journeyIcon: {
+    marginRight: Spacing.xs,
+  },
+  journeyTitle: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.lg,
+    fontWeight: '600',
+    color: Colors.dark.text.primary,
+  },
+  journeyMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginTop: 2,
+  },
+  journeyMetaText: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.sm,
+    color: Colors.dark.text.secondary,
   },
   footer: {
-    paddingBottom: Spacing['2xl'],
-    alignItems: 'center',
-  },
-  pagination: {
     flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: Layout.radiusFull,
-    backgroundColor: Colors.ui.border,
-  },
-  dotActive: {
-    width: 24,
-    backgroundColor: Colors.primary.blue,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing['2xl'],
+    paddingTop: Spacing.base,
   },
 });

@@ -1,63 +1,104 @@
-/**
- * Onboarding Screen 1: Welcome
- * 
- * Introduces the app's core value proposition:
- * "Plan your journey in 1-2 conversational turns"
- */
+/** Onboarding 1: Just Say Where – voice/plain-English input, no menus. */
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import { Colors, TextStyles, Spacing, Layout, TouchTarget } from '@/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  Colors,
+  ColorUtils,
+  FontFamily,
+  FontSize,
+  Spacing,
+  Layout,
+} from '@/theme';
+import { Skip, PaginationDots, OnboardingCta, PulsatingRings } from '@/components/Onboarding';
+import { ActionChip, ActionChipGroup } from '@/components/Common';
+
+const ONBOARDING_KEY = '@agentic_map:onboarding_complete';
 
 export default function WelcomeScreen() {
   const router = useRouter();
 
+  const handleSkip = async () => {
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch {
+      // ignore
+    }
+    router.replace('/(tabs)');
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <Animated.View 
-        style={styles.content}
-        entering={FadeInDown.duration(600).delay(200)}
-      >
-        {/* Icon/Illustration placeholder */}
-        <View style={styles.iconContainer}>
-          <Text style={styles.icon}>🗺️</Text>
-        </View>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <View style={styles.inner}>
+        <Skip onPress={handleSkip} />
 
-        {/* Title */}
-        <Text style={styles.title}>Say Where You Want to Go</Text>
-
-        {/* Description */}
-        <Text style={styles.description}>
-          Skip the manual steps. Just tell us your destination and we'll handle the rest.
-        </Text>
-
-        {/* Example */}
-        <View style={styles.exampleCard}>
-          <Text style={styles.exampleLabel}>Try saying:</Text>
-          <Text style={styles.exampleText}>
-            "Take me home via Starbucks"
-          </Text>
-        </View>
-      </Animated.View>
-
-      {/* Footer with pagination and Next button */}
-      <View style={styles.footer}>
-        <View style={styles.pagination}>
-          <View style={[styles.dot, styles.dotActive]} />
-          <View style={styles.dot} />
-          <View style={styles.dot} />
-        </View>
-        
-        <TouchableOpacity 
-          style={styles.nextButton}
-          onPress={() => router.push('/onboarding/features')}
-          activeOpacity={0.8}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.nextButtonText}>Next</Text>
-        </TouchableOpacity>
+          <Animated.View
+            entering={FadeIn.duration(500)}
+            style={styles.ringsWrap}
+          >
+            <PulsatingRings size={140}>
+              <View style={styles.chatIconWrap}>
+                <Ionicons name="chatbubble-outline" size={56} color={Colors.primary.teal} />
+              </View>
+            </PulsatingRings>
+          </Animated.View>
+
+          <Animated.Text
+            entering={FadeInDown.duration(400).delay(100)}
+            style={styles.title}
+          >
+            Just Say Where
+          </Animated.Text>
+
+          <Animated.View
+            entering={FadeInDown.duration(400).delay(180)}
+            style={styles.subtitleRow}
+          >
+            <View style={styles.subtitleBlock}>
+              <Text style={styles.subtitle}>Tell us your destination in plain English</Text>
+              <Text style={styles.subtitle}>No more tapping through menus.</Text>
+            </View>
+            <View style={styles.locationPinWrap}>
+              <Pressable style={({ pressed }) => [styles.locationPin, pressed && styles.locationPinPressed]}>
+                <Ionicons name="location-outline" size={20} color={Colors.primary.teal} />
+              </Pressable>
+            </View>
+          </Animated.View>
+
+          <Animated.View
+            entering={FadeInUp.duration(400).delay(260)}
+            style={styles.exampleCard}
+          >
+            <Text style={styles.exampleText} numberOfLines={2}>
+              Take me home with stops at Starbucks and Walmart
+            </Text>
+            <Pressable style={({ pressed }) => [styles.micBtn, pressed && styles.micBtnPressed]}>
+              <Ionicons name="mic-outline" size={22} color={Colors.primary.teal} />
+            </Pressable>
+          </Animated.View>
+
+          <Animated.View entering={FadeInUp.duration(350).delay(340)}>
+            <ActionChipGroup direction="horizontal" wrap gap={Spacing.sm}>
+              <ActionChip label="Home" onPress={() => {}} variant="suggested" />
+              <ActionChip label="Work" onPress={() => {}} variant="suggested" />
+              <ActionChip label="Grocery store" onPress={() => {}} variant="suggested" />
+            </ActionChipGroup>
+          </Animated.View>
+        </ScrollView>
+
+        <Animated.View entering={FadeIn.duration(300).delay(400)} style={styles.footer}>
+          <PaginationDots activeStep={1} />
+          <OnboardingCta label="Next" onPress={() => router.push('/onboarding/features')} />
+        </Animated.View>
       </View>
     </SafeAreaView>
   );
@@ -66,92 +107,104 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.ui.background,
+    backgroundColor: Colors.dark.background,
   },
-  content: {
+  inner: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing['4xl'],
+    paddingBottom: Spacing.xl,
+    alignItems: 'center',
+  },
+  ringsWrap: {
+    marginBottom: Spacing.xl,
+  },
+  chatIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: ColorUtils.withAlpha(Colors.primary.teal, 0.2),
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: Spacing['2xl'],
-  },
-  iconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: Layout.radiusFull,
-    backgroundColor: Colors.primary.lightBlue,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing['2xl'],
-  },
-  icon: {
-    fontSize: 64,
   },
   title: {
-    ...TextStyles.h1,
-    color: Colors.ui.text.primary,
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize['3xl'],
+    fontWeight: '700',
+    color: Colors.dark.text.primary,
     textAlign: 'center',
     marginBottom: Spacing.base,
   },
-  description: {
-    ...TextStyles.bodyLarge,
-    color: Colors.ui.text.secondary,
-    textAlign: 'center',
-    marginBottom: Spacing['2xl'],
-    lineHeight: 24,
-  },
-  exampleCard: {
-    backgroundColor: Colors.ui.surface,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.base,
-    borderRadius: Layout.radiusLarge,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.primary.blue,
-  },
-  exampleLabel: {
-    ...TextStyles.caption,
-    color: Colors.ui.text.tertiary,
-    marginBottom: Spacing.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  exampleText: {
-    ...TextStyles.bodyLarge,
-    color: Colors.primary.blue,
-    fontWeight: '600',
-  },
-  footer: {
-    paddingBottom: Spacing['2xl'],
-    paddingHorizontal: Spacing.xl,
-    alignItems: 'center',
-    gap: Spacing.xl,
-  },
-  pagination: {
+  subtitleRow: {
     flexDirection: 'row',
-    gap: Spacing.sm,
+    alignItems: 'flex-start',
+    marginBottom: Spacing['2xl'],
+    paddingHorizontal: Spacing.sm,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: Layout.radiusFull,
-    backgroundColor: Colors.ui.border,
+  subtitleBlock: {
+    flex: 1,
   },
-  dotActive: {
-    width: 24,
-    backgroundColor: Colors.primary.blue,
+  subtitle: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.base,
+    color: Colors.dark.text.secondary,
+    textAlign: 'center',
+    lineHeight: 22,
   },
-  nextButton: {
-    backgroundColor: Colors.primary.blue,
-    paddingHorizontal: Spacing['3xl'],
-    paddingVertical: Spacing.base,
-    borderRadius: Layout.radiusLarge,
-    minHeight: TouchTarget.minAndroid,
+  locationPinWrap: {
+    marginLeft: Spacing.sm,
+  },
+  locationPin: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: ColorUtils.withAlpha(Colors.primary.teal, 0.15),
     justifyContent: 'center',
     alignItems: 'center',
-    width: '100%',
-    maxWidth: 300,
   },
-  nextButtonText: {
-    ...TextStyles.buttonLarge,
-    color: Colors.ui.text.onPrimary,
+  locationPinPressed: {
+    opacity: 0.8,
+  },
+  exampleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    backgroundColor: Colors.effects.glassDark,
+    borderWidth: 1,
+    borderColor: Colors.effects.glassDarkBorder,
+    borderRadius: Layout.radiusLarge,
+    paddingVertical: Spacing.base,
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.xl,
+    gap: Spacing.md,
+  },
+  exampleText: {
+    flex: 1,
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.base,
+    fontWeight: '500',
+    color: Colors.dark.text.primary,
+  },
+  micBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: ColorUtils.withAlpha(Colors.primary.teal, 0.2),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  micBtnPressed: {
+    opacity: 0.8,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing['2xl'],
+    paddingTop: Spacing.base,
   },
 });

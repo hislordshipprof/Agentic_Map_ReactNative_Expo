@@ -1,70 +1,122 @@
-/**
- * Onboarding Screen 2: Features
- * 
- * Highlights key features:
- * "We find stops on your way"
- */
+/** Onboarding 2: Optimized Stops – best locations on your route, less detour, time saved. */
 
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import { Colors, TextStyles, Spacing, Layout, TouchTarget } from '@/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  Colors,
+  FontFamily,
+  FontSize,
+  Spacing,
+  Layout,
+} from '@/theme';
+import { Skip, PaginationDots, OnboardingCta, RouteDiagram } from '@/components/Onboarding';
+
+const ONBOARDING_KEY = '@agentic_map:onboarding_complete';
+const PROGRESS_WIDTH = 200;
+const OPTIMIZED_RATIO = 33 / 45;
 
 export default function FeaturesScreen() {
   const router = useRouter();
+  const barWidth = useSharedValue(0);
+
+  useEffect(() => {
+    barWidth.value = withDelay(
+      500,
+      withTiming(PROGRESS_WIDTH * OPTIMIZED_RATIO, {
+        duration: 500,
+        easing: Easing.out(Easing.cubic),
+      })
+    );
+  }, []);
+
+  const animatedBar = useAnimatedStyle(() => ({
+    width: barWidth.value,
+  }));
+
+  const handleSkip = async () => {
+    try {
+      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
+    } catch {
+      // ignore
+    }
+    router.replace('/(tabs)');
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <Animated.View 
-        style={styles.content}
-        entering={FadeInDown.duration(600).delay(200)}
-      >
-        {/* Icon/Illustration placeholder */}
-        <View style={styles.iconContainer}>
-          <Text style={styles.icon}>🛑</Text>
-        </View>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <View style={styles.inner}>
+        <Skip onPress={handleSkip} />
 
-        {/* Title */}
-        <Text style={styles.title}>We Find Stops On Your Way</Text>
-
-        {/* Description */}
-        <Text style={styles.description}>
-          Add Starbucks, gas stations, or groceries. We'll optimize your route automatically.
-        </Text>
-
-        {/* Feature list */}
-        <View style={styles.featureList}>
-          <View style={styles.featureItem}>
-            <Text style={styles.featureIcon}>✓</Text>
-            <Text style={styles.featureText}>Smart stop suggestions</Text>
-          </View>
-          <View style={styles.featureItem}>
-            <Text style={styles.featureIcon}>✓</Text>
-            <Text style={styles.featureText}>Minimal detours</Text>
-          </View>
-          <View style={styles.featureItem}>
-            <Text style={styles.featureIcon}>✓</Text>
-            <Text style={styles.featureText}>Auto-optimized routes</Text>
-          </View>
-        </View>
-      </Animated.View>
-
-      {/* Footer with pagination and Next button */}
-      <View style={styles.footer}>
-        <View style={styles.pagination}>
-          <View style={styles.dot} />
-          <View style={[styles.dot, styles.dotActive]} />
-          <View style={styles.dot} />
-        </View>
-        
-        <TouchableOpacity 
-          style={styles.nextButton}
-          onPress={() => router.push('/onboarding/ready')}
-          activeOpacity={0.8}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.nextButtonText}>Next</Text>
-        </TouchableOpacity>
+          <Animated.View
+            entering={FadeInDown.duration(350).delay(80)}
+            style={styles.badge}
+          >
+            <Ionicons name="flash" size={14} color="#FFF" />
+            <Text style={styles.badgeText}>Smart Optimization</Text>
+          </Animated.View>
+
+          <Animated.Text
+            entering={FadeInDown.duration(400).delay(140)}
+            style={styles.title}
+          >
+            Optimized Stops
+          </Animated.Text>
+
+          <Animated.Text
+            entering={FadeInDown.duration(400).delay(220)}
+            style={styles.subtitle}
+          >
+            We find the best locations on your route.{'\n'}Less detours, more time saved.
+          </Animated.Text>
+
+          <RouteDiagram />
+
+          <Animated.View
+            entering={FadeInUp.duration(400).delay(380)}
+            style={styles.optimizedCard}
+          >
+            <View style={styles.optimizedRow1}>
+              <View style={styles.optimizedLeft}>
+                <Ionicons name="flash" size={18} color={Colors.semantic.success} />
+                <Text style={styles.optimizedTitle}>Route Optimized</Text>
+              </View>
+              <Text style={styles.savedText}>-12 min</Text>
+            </View>
+            <Text style={styles.optimizedMeta}>3 stops • Minimal detour</Text>
+            <View style={styles.progressWrap}>
+              <View style={styles.progressBg}>
+                <Text style={styles.progressLabel}>Original: 45 min</Text>
+              </View>
+              <View style={styles.progressBarContainer}>
+                <Animated.View style={[styles.progressBar, animatedBar]} />
+                <Text style={styles.progressLabelGreen}>Optimized: 33 min</Text>
+              </View>
+            </View>
+          </Animated.View>
+        </ScrollView>
+
+        <Animated.View entering={FadeIn.duration(300).delay(480)} style={styles.footer}>
+          <PaginationDots activeStep={2} />
+          <OnboardingCta label="Next" onPress={() => router.push('/onboarding/ready')} />
+        </Animated.View>
       </View>
     </SafeAreaView>
   );
@@ -73,95 +125,131 @@ export default function FeaturesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.ui.background,
+    backgroundColor: Colors.dark.background,
   },
-  content: {
+  inner: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: Spacing['2xl'],
   },
-  iconContainer: {
-    width: 120,
-    height: 120,
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing['4xl'],
+    paddingBottom: Spacing.xl,
+    alignItems: 'center',
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: Colors.semantic.success,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
     borderRadius: Layout.radiusFull,
-    backgroundColor: Colors.status.minimal,
-    opacity: 0.2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing['2xl'],
+    gap: Spacing.xs,
+    marginBottom: Spacing.lg,
   },
-  icon: {
-    fontSize: 64,
+  badgeText: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: '#FFF',
   },
   title: {
-    ...TextStyles.h1,
-    color: Colors.ui.text.primary,
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize['3xl'],
+    fontWeight: '700',
+    color: Colors.dark.text.primary,
     textAlign: 'center',
     marginBottom: Spacing.base,
   },
-  description: {
-    ...TextStyles.bodyLarge,
-    color: Colors.ui.text.secondary,
+  subtitle: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.base,
+    color: Colors.dark.text.secondary,
     textAlign: 'center',
-    marginBottom: Spacing['2xl'],
-    lineHeight: 24,
+    lineHeight: 22,
+    marginBottom: Spacing.sm,
   },
-  featureList: {
-    gap: Spacing.base,
-    alignSelf: 'stretch',
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.ui.surface,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.base,
+  optimizedCard: {
+    width: '100%',
+    backgroundColor: Colors.effects.glassDark,
+    borderWidth: 1,
+    borderColor: Colors.effects.glassDarkBorder,
     borderRadius: Layout.radiusLarge,
-    gap: Spacing.md,
+    padding: Spacing.lg,
   },
-  featureIcon: {
-    fontSize: 20,
-    color: Colors.status.noDetour,
-  },
-  featureText: {
-    ...TextStyles.body,
-    color: Colors.ui.text.primary,
-    flex: 1,
-  },
-  footer: {
-    paddingBottom: Spacing['2xl'],
-    paddingHorizontal: Spacing.xl,
-    alignItems: 'center',
-    gap: Spacing.xl,
-  },
-  pagination: {
+  optimizedRow1: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.xs,
+  },
+  optimizedLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.sm,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: Layout.radiusFull,
-    backgroundColor: Colors.ui.border,
+  optimizedTitle: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.base,
+    fontWeight: '600',
+    color: Colors.dark.text.primary,
   },
-  dotActive: {
-    width: 24,
-    backgroundColor: Colors.primary.blue,
+  savedText: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.lg,
+    fontWeight: '700',
+    color: Colors.semantic.success,
   },
-  nextButton: {
-    backgroundColor: Colors.primary.blue,
-    paddingHorizontal: Spacing['3xl'],
-    paddingVertical: Spacing.base,
-    borderRadius: Layout.radiusLarge,
-    minHeight: TouchTarget.minAndroid,
+  optimizedMeta: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.sm,
+    color: Colors.dark.text.secondary,
+    marginBottom: Spacing.md,
+  },
+  progressWrap: {
+    gap: Spacing.xs,
+  },
+  progressBg: {
+    height: 20,
+    width: PROGRESS_WIDTH,
+    backgroundColor: Colors.dark.elevated,
+    borderRadius: 4,
     justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-    maxWidth: 300,
+    paddingHorizontal: Spacing.sm,
   },
-  nextButtonText: {
-    ...TextStyles.buttonLarge,
-    color: Colors.ui.text.onPrimary,
+  progressBarContainer: {
+    height: 20,
+    width: PROGRESS_WIDTH,
+    flexDirection: 'row',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderRadius: 4,
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: Colors.semantic.success,
+    borderRadius: 4,
+  },
+  progressLabel: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.xs,
+    color: Colors.dark.text.tertiary,
+  },
+  progressLabelGreen: {
+    position: 'absolute',
+    left: Spacing.sm,
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.xs,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing['2xl'],
+    paddingTop: Spacing.base,
   },
 });

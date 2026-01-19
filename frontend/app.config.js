@@ -49,7 +49,7 @@ module.exports = {
       output: "static",
       favicon: "./assets/favicon.png",
     },
-    plugins: ["expo-router", "expo-location", "./plugins/withAndroidGradleJdk21"],
+    plugins: ["expo-router", "expo-location", "./plugins/withAndroidGradleJdk21", "./plugins/withGoogleMapsApiKeyPlaceholder"],
     experiments: {
       typedRoutes: true,
     },
