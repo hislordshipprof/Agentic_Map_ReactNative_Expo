@@ -23,6 +23,9 @@ export {
   type CachedData,
 } from './useOffline';
 
+// Location hook (current position for conversation and navigate)
+export { useLocation, type UseLocationResult } from './useLocation';
+
 // Error handling hook
 export {
   useErrorHandler,

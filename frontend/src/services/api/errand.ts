@@ -13,13 +13,14 @@ import type {
   NavigateWithStopsRequest,
   NavigateWithStopsResponse,
   SuggestStopsRequest,
-  SuggestStopsResponse,
+  SuggestStopsData,
   EscalateToLLMRequest,
   EscalateToLLMResponse,
   NLUProcessRequest,
   NLUProcessResponse,
   ApiResponse,
 } from '@/types/api';
+import type { Route } from '@/types/route';
 
 /**
  * Errand API endpoints
@@ -48,7 +49,8 @@ export const errandApi = {
    */
   suggestStops: async (
     request: SuggestStopsRequest
-  ): Promise<SuggestStopsResponse> => {
+  ): Promise<ApiResponse<SuggestStopsData>> => {
+    const limit = request.limit ?? request.maxStops;
     const params = new URLSearchParams({
       originLat: request.origin.lat.toString(),
       originLng: request.origin.lng.toString(),
@@ -58,12 +60,12 @@ export const errandApi = {
       ...(request.maxDetourPercent && {
         maxDetourPercent: request.maxDetourPercent.toString(),
       }),
-      ...(request.limit && { limit: request.limit.toString() }),
+      ...(limit != null && { limit: limit.toString() }),
     });
 
-    return apiClient.get<SuggestStopsResponse>(
+    return apiClient.get<SuggestStopsData>(
       `/errand/suggest-stops-on-route?${params.toString()}`
-    ) as unknown as SuggestStopsResponse;
+    );
   },
 
   /**
@@ -103,11 +105,8 @@ export const errandApi = {
     origin: { lat: number; lng: number };
     destination: { lat: number; lng: number };
     stops: Array<{ placeId: string; lat: number; lng: number }>;
-  }): Promise<ApiResponse<NavigateWithStopsResponse>> => {
-    return apiClient.post<NavigateWithStopsResponse>(
-      '/errand/recalculate',
-      request
-    );
+  }): Promise<ApiResponse<{ route: Route }>> => {
+    return apiClient.post<{ route: Route }>('/errand/recalculate', request);
   },
 
   /**

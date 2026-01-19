@@ -24,11 +24,13 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export interface OnboardingCtaProps {
   label: 'Next' | 'Get Started';
   onPress: () => void;
+  /** Slightly smaller for in-card usage (e.g. Get Started in journey card) */
+  compact?: boolean;
 }
 
 const GRADIENT_COLORS = [Colors.primary.teal, Colors.primary.tealDark] as const;
 
-export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress }) => {
+export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, compact }) => {
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -46,7 +48,7 @@ export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress }) 
       onPressOut={() => {
         scale.value = withSpring(1, SpringConfig.gentle);
       }}
-      style={[styles.wrapper, animatedStyle]}
+      style={[styles.wrapper, compact && styles.wrapperCompact, animatedStyle]}
       accessibilityLabel={label === 'Next' ? 'Next' : 'Get started'}
       accessibilityRole="button"
     >
@@ -54,7 +56,7 @@ export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress }) 
         colors={[...GRADIENT_COLORS]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.gradient}
+        style={[styles.gradient, compact && styles.gradientCompact]}
       >
         <Text style={styles.text}>{label}</Text>
         {showArrow && (
@@ -85,6 +87,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     minWidth: 160,
   },
+  wrapperCompact: {
+    minWidth: 120,
+    minHeight: 44,
+  },
   gradient: {
     flex: 1,
     flexDirection: 'row',
@@ -93,6 +99,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.base,
     gap: Spacing.xs,
+  },
+  gradientCompact: {
+    paddingVertical: 10,
   },
   text: {
     fontFamily: FontFamily.primary,

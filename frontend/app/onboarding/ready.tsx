@@ -14,7 +14,7 @@ import {
   Spacing,
   Layout,
 } from '@/theme';
-import { Skip, PaginationDots, OnboardingCta, RouteGridCard } from '@/components/Onboarding';
+import { Skip, PaginationDots, OnboardingCta, OnboardingProgressBar, RouteGridCard } from '@/components/Onboarding';
 
 const ONBOARDING_KEY = '@agentic_map:onboarding_complete';
 
@@ -79,12 +79,15 @@ export default function ReadyScreen() {
                 <Text style={styles.journeyMetaText}>4 stops • miles</Text>
               </View>
             </View>
-            <OnboardingCta label="Get Started" onPress={handleGetStarted} />
           </Animated.View>
         </ScrollView>
 
         <Animated.View entering={FadeIn.duration(300).delay(480)} style={styles.footer}>
-          <PaginationDots activeStep={3} />
+          <OnboardingProgressBar step={3} />
+          <View style={styles.footerRow}>
+            <PaginationDots activeStep={3} />
+            <OnboardingCta label="Get Started" onPress={handleGetStarted} />
+          </View>
         </Animated.View>
       </View>
     </SafeAreaView>
@@ -162,11 +165,13 @@ const styles = StyleSheet.create({
     color: Colors.dark.text.secondary,
   },
   footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
     paddingHorizontal: Spacing.xl,
     paddingBottom: Spacing['2xl'],
     paddingTop: Spacing.base,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 });

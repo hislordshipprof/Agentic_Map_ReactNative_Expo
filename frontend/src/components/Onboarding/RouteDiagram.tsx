@@ -1,9 +1,19 @@
-/** Horizontal route diagram: line + nodes (Start, Starbucks, Walmart, End). */
+/** Horizontal route diagram: line + nodes (Start, Starbucks, Walmart, End) with pulse. */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeInUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { Colors, FontFamily, FontSize, Spacing } from '@/theme';
 
 const NODES: { icon: keyof typeof Ionicons.glyphMap; color: string; label?: string }[] = [
@@ -13,7 +23,30 @@ const NODES: { icon: keyof typeof Ionicons.glyphMap; color: string; label?: stri
   { icon: 'flag', color: '#A855F7', label: undefined },
 ];
 
+const NODE_SIZE = 40;
+const ICON_SIZE = 20;
+
 export const RouteDiagram: React.FC = () => {
+  const pulse = useSharedValue(1);
+
+  useEffect(() => {
+    pulse.value = withDelay(
+      400,
+      withRepeat(
+        withSequence(
+          withTiming(1.1, { duration: 600, easing: Easing.inOut(Easing.ease) }),
+          withTiming(1, { duration: 600, easing: Easing.inOut(Easing.ease) })
+        ),
+        -1,
+        true
+      )
+    );
+  }, []);
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulse.value }],
+  }));
+
   return (
     <Animated.View entering={FadeIn.duration(450).delay(300)} style={styles.container}>
       <View style={styles.lineWrap}>
@@ -23,12 +56,22 @@ export const RouteDiagram: React.FC = () => {
       </View>
       <View style={styles.nodes}>
         {NODES.map((n, i) => (
-          <View key={i} style={styles.nodeWrap}>
-            <View style={[styles.node, { backgroundColor: n.color }]}>
-              <Ionicons name={n.icon} size={18} color="#FFF" />
-            </View>
+          <Animated.View
+            key={i}
+            entering={FadeInUp.duration(350).delay(350 + i * 60)}
+            style={styles.nodeWrap}
+          >
+            <Animated.View
+              style={[
+                styles.node,
+                pulseStyle,
+                { backgroundColor: n.color, width: NODE_SIZE, height: NODE_SIZE, borderRadius: NODE_SIZE / 2 },
+              ]}
+            >
+              <Ionicons name={n.icon} size={ICON_SIZE} color="#FFF" />
+            </Animated.View>
             {n.label ? <Text style={styles.label}>{n.label}</Text> : null}
-          </View>
+          </Animated.View>
         ))}
       </View>
     </Animated.View>
@@ -59,11 +102,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   node: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: Colors.primary.teal,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 4,
   },
   label: {
     fontFamily: FontFamily.primary,

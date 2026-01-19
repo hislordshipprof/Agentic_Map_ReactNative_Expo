@@ -5,7 +5,7 @@
  * Features teal glow effects, glassmorphism cards, and smooth animations.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,13 +22,17 @@ import { Ionicons } from '@expo/vector-icons';
 
 // Components
 import { AnimatedMessage } from '@/components/Conversation';
-import { useRoute } from '@/hooks';
-import { mockRoute } from '@/fixtures/mockRoute';
+import type { Message } from '@/components/Conversation';
+import { useRoute, useNLUFlow, useLocation } from '@/hooks';
 import {
   GlassCard,
   ThinkingBubble,
 } from '@/components/Common';
 import { UserInputField } from '@/components/Input';
+import { ConfirmationDialog, AlternativesDialog, DEFAULT_ALTERNATIVES } from '@/components/Dialogs';
+import { errandApi } from '@/services/api/errand';
+import type { Entities } from '@/types/nlu';
+import type { Route } from '@/types/route';
 
 // Theme
 import {
@@ -38,14 +42,11 @@ import {
   FontSize,
 } from '@/theme';
 
-// Types
-import type { Message } from '@/components/Conversation';
-
 /**
  * Quick action suggestions - pill style chips
  */
 const quickActions = [
-  { id: 'demo', label: 'View demo route', icon: 'map-outline' as const },
+  { id: 'demo', label: 'Take me home with Starbucks', icon: 'map-outline' as const },
   { id: '1', label: 'Generate route', icon: 'navigate-outline' as const },
   { id: '2', label: 'Find stops', icon: 'location-outline' as const },
   { id: '3', label: 'Coffee nearby', icon: 'cafe-outline' as const },
@@ -117,69 +118,164 @@ const TopicCard: React.FC<{
 /**
  * Main Conversation Screen
  */
+function entitiesToConfirmation(entities: Entities): { destination?: string; stops?: string[] } {
+  return {
+    destination: entities.destination,
+    stops: entities.stops && entities.stops.length > 0 ? entities.stops : undefined,
+  };
+}
+
 export default function ConversationScreen(): JSX.Element {
   const router = useRouter();
-  const { setPendingFromMock } = useRoute();
+  const { setPending } = useRoute();
+  const {
+    flowState,
+    intent,
+    entities,
+    processUtterance,
+    onNLUResponse,
+    confirmCurrentIntent,
+    rejectAndRephrase,
+    selectAlternative,
+    shouldShowConfirmation,
+    shouldShowAlternatives,
+  } = useNLUFlow();
+  const { currentLocation, locationError, isLoading: locationLoading } = useLocation();
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const navigateDoneRef = useRef(false);
+  const escalationInProgressRef = useRef(false);
 
-  // Handle sending a message
-  const handleSend = useCallback((text: string) => {
-    const userMessage: Message = {
-      id: `user_${Date.now()}`,
-      sender: 'user',
-      text,
-      timestamp: Date.now(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
-
-    // Simulate AI response
-    setTimeout(() => {
-      const systemMessage: Message = {
-        id: `system_${Date.now()}`,
-        sender: 'system',
-        text: getAIResponse(text),
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, systemMessage]);
-      setIsLoading(false);
-    }, 1500);
+  const appendSystem = useCallback((text: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { id: `system_${Date.now()}`, sender: 'system', text, timestamp: Date.now() },
+    ]);
   }, []);
 
-  // Handle quick action
+  const doNavigate = useCallback(
+    async (ent: Entities, loc: { lat: number; lng: number } | null) => {
+      if (navigateDoneRef.current) return;
+      if (!loc) {
+        appendSystem('Location is needed to plan the route. Please enable location services.');
+        return;
+      }
+      if (!ent.destination) {
+        appendSystem('I need a destination to plan your route. Where would you like to go?');
+        return;
+      }
+      navigateDoneRef.current = true;
+      try {
+        const res = await errandApi.navigateWithStops({
+          origin: loc,
+          destination: { name: ent.destination },
+          stops: (ent.stops || []).map((s) => ({ name: s, category: ent.category })),
+        });
+        if (!res.success || res.error) {
+          navigateDoneRef.current = false;
+          appendSystem(res.error?.message ?? 'Could not plan the route. Please try again.');
+          return;
+        }
+        const data = res.data as { route: Route; excludedStops?: unknown[] } | undefined;
+        if (!data?.route) {
+          navigateDoneRef.current = false;
+          appendSystem('No route in response.');
+          return;
+        }
+        setPending(data.route);
+        const n = data.route.stops?.length ?? 0;
+        const excl = data.excludedStops?.length;
+        appendSystem(
+          `Route ready. ${n} stop${n !== 1 ? 's' : ''}.${excl ? ` Some stops were excluded: ${excl}.` : ''}`
+        );
+        router.push('/(tabs)/route');
+      } catch (e) {
+        navigateDoneRef.current = false;
+        appendSystem(e instanceof Error ? e.message : 'Could not plan the route.');
+      }
+    },
+    [appendSystem, setPending, router]
+  );
+
+  // HIGH confidence: navigate when we have intent, destination, and location
+  useEffect(() => {
+    if (
+      flowState !== 'high_confidence' ||
+      intent !== 'navigate_with_stops' ||
+      !entities.destination ||
+      navigateDoneRef.current
+    ) return;
+    doNavigate(entities, currentLocation);
+  }, [flowState, intent, entities, currentLocation, doNavigate]);
+
+  // Escalating: call escalateToLLM
+  useEffect(() => {
+    if (flowState !== 'escalating' || escalationInProgressRef.current) return;
+    const lastUser = [...messages].reverse().find((m) => m.sender === 'user');
+    const utterance = lastUser?.text ?? '';
+    const conversationHistory = messages.map((m) => ({
+      role: m.sender as 'user' | 'system',
+      content: m.text,
+    }));
+    escalationInProgressRef.current = true;
+    errandApi
+      .escalateToLLM({ utterance, conversationHistory, currentLocation: currentLocation ?? undefined })
+      .then((res) => {
+        if (res.success && res.data) onNLUResponse(res.data);
+        else appendSystem(res.error?.message ?? 'Escalation failed.');
+      })
+      .catch((e) => {
+        appendSystem(e instanceof Error ? e.message : 'Escalation failed.');
+      })
+      .finally(() => {
+        escalationInProgressRef.current = false;
+      });
+  }, [flowState, messages, currentLocation, onNLUResponse, appendSystem]);
+
+  const handleSend = useCallback(
+    async (text: string) => {
+      const userMessage: Message = {
+        id: `user_${Date.now()}`,
+        sender: 'user',
+        text,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, userMessage]);
+
+      if (!currentLocation && (locationError || !locationLoading)) {
+        appendSystem('Please enable location services to plan your route.');
+        return;
+      }
+      if (!currentLocation && locationLoading) {
+        appendSystem('Getting your location…');
+      }
+
+      navigateDoneRef.current = false;
+      setIsLoading(true);
+      try {
+        await processUtterance(text, currentLocation ?? undefined);
+      } catch (e) {
+        appendSystem(e instanceof Error ? e.message : 'Something went wrong.');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [currentLocation, locationError, locationLoading, processUtterance, appendSystem]
+  );
+
   const handleQuickAction = useCallback((action: string) => {
     handleSend(action);
   }, [handleSend]);
 
-  // Handle voice press (placeholder - to be implemented in Phase 4)
-  const handleVoicePress = useCallback(() => {
-    setIsRecording(true);
-  }, []);
+  const handleConfirmThenNavigate = useCallback(() => {
+    confirmCurrentIntent();
+    doNavigate(entities, currentLocation);
+  }, [confirmCurrentIntent, doNavigate, entities, currentLocation]);
 
-  const handleVoiceRelease = useCallback(() => {
-    setIsRecording(false);
-  }, []);
-
-  // Simple AI response simulation
-  const getAIResponse = (text: string): string => {
-    const lower = text.toLowerCase();
-    if (lower.includes('home')) {
-      return "I'll get you home! Would you like to add any stops on the way?";
-    }
-    if (lower.includes('coffee') || lower.includes('starbucks')) {
-      return "Found 3 coffee shops on your route. The closest is Starbucks (0.4 mi detour).";
-    }
-    if (lower.includes('gas')) {
-      return "There's a Shell station just 0.2 miles off your route. Should I add it?";
-    }
-    if (lower.includes('route') || lower.includes('stop')) {
-      return "I can help you plan an efficient route with multiple stops. Where are you heading?";
-    }
-    return "I can help you plan your journey. Try saying 'Take me home via Starbucks' or tap a suggestion below.";
-  };
+  const handleVoicePress = useCallback(() => setIsRecording(true), []);
+  const handleVoiceRelease = useCallback(() => setIsRecording(false), []);
 
   return (
     <View style={styles.container}>
@@ -229,8 +325,7 @@ export default function ConversationScreen(): JSX.Element {
                     icon={action.icon}
                     onPress={() => {
                       if (action.id === 'demo') {
-                        setPendingFromMock(mockRoute);
-                        router.push('/(tabs)/route');
+                        handleQuickAction('Take me home with Starbucks');
                       } else {
                         handleQuickAction(action.label);
                       }
@@ -312,6 +407,30 @@ export default function ConversationScreen(): JSX.Element {
           placeholder="Type a message..."
         />
       </SafeAreaView>
+
+      <ConfirmationDialog
+        visible={shouldShowConfirmation()}
+        title="I think you want to:"
+        entities={entitiesToConfirmation(entities)}
+        confidence={undefined}
+        onConfirm={handleConfirmThenNavigate}
+        onRephrase={rejectAndRephrase}
+      />
+
+      <AlternativesDialog
+        visible={shouldShowAlternatives()}
+        alternatives={DEFAULT_ALTERNATIVES}
+        onSelect={(alt) => {
+          selectAlternative(alt.intent ?? alt.id);
+          if (alt.intent === 'find_place') {
+            appendSystem('What place are you looking for? Try "coffee nearby" or "gas station on the way".');
+          } else if (alt.intent === 'set_destination') {
+            appendSystem('Where would you like to go? Say an address, a place name, or "home" / "work" if you have them saved.');
+          }
+        }}
+        onRephrase={rejectAndRephrase}
+        onDismiss={rejectAndRephrase}
+      />
     </View>
   );
 }

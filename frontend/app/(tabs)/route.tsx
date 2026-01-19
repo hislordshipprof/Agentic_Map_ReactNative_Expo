@@ -7,7 +7,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { Text, StyleSheet, Pressable, Alert } from 'react-native';
+import { Text, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
@@ -17,7 +17,6 @@ import { RouteConfirmationScreen } from '@/components/Route';
 import { AdjustmentMode, AddStopForm } from '@/components/Adjustment';
 import type { AddStopPlace } from '@/components/Adjustment';
 import { useRoute } from '@/hooks';
-import { mockRoute } from '@/fixtures/mockRoute';
 import { errandApi } from '@/services/api/errand';
 import { Colors, Spacing, FontFamily, FontSize } from '@/theme';
 import { getDetourStatus } from '@/types/route';
@@ -36,7 +35,6 @@ export default function RouteScreen(): JSX.Element {
     setPending,
     enterAdjustment,
     exitAdjustment,
-    setPendingFromMock,
     addStop,
     removeStop,
     reorderStops,
@@ -64,10 +62,6 @@ export default function RouteScreen(): JSX.Element {
     router.replace('/(tabs)');
   };
 
-  const handleLoadDemo = () => {
-    setPendingFromMock(mockRoute);
-  };
-
   const handleReoptimize = useCallback(async (overrideStops?: RouteStop[]) => {
     if (!baseRoute) return;
     const list = overrideStops ?? routeWithStops?.stops ?? [];
@@ -79,7 +73,11 @@ export default function RouteScreen(): JSX.Element {
         destination: baseRoute.destination.location,
         stops: list.map((s) => ({ placeId: s.id, lat: s.location.lat, lng: s.location.lng })),
       });
-      const route = (res as { data?: { route?: import('@/types/route').Route } })?.data?.route;
+      if (!res.success || res.error) {
+        setError(res.error?.message ?? 'Could not recalculate route');
+        return;
+      }
+      const route = res.data?.route;
       if (route) setPending(route);
       else setError('Could not recalculate route');
     } catch (e) {
@@ -97,9 +95,13 @@ export default function RouteScreen(): JSX.Element {
         destination: baseRoute.destination.location,
         stops: routeWithStops.stops.map((s) => ({ placeId: s.id, lat: s.location.lat, lng: s.location.lng })),
       });
-      const d = res?.data;
+      if (!res.success || res.error) {
+        Alert.alert('Preview', res.error?.message ?? 'Could not load preview.');
+        return;
+      }
+      const d = res.data;
       if (d) {
-        Alert.alert('Route preview', `Distance: ${(d.totalDistance || 0).toFixed(1)} mi\nDuration: ~${Math.round(d.totalDuration || 0)} min`);
+        Alert.alert('Route preview', `Distance: ${(d.totalDistance ?? 0).toFixed(1)} mi\nDuration: ~${Math.round(d.totalDuration ?? 0)} min`);
       } else {
         Alert.alert('Preview', 'Could not load preview.');
       }
@@ -178,6 +180,11 @@ export default function RouteScreen(): JSX.Element {
             onCancel={() => { setAddStopFormVisible(false); setReplaceContext(null); }}
             mode={replaceContext ? 'replace' : 'add'}
             replaceStopName={replaceContext?.stopName}
+            location={
+              baseRoute?.origin?.location
+              ?? routeWithStops?.stops?.[0]?.location
+              ?? undefined
+            }
           />
         )}
       </SafeAreaView>
@@ -210,15 +217,6 @@ export default function RouteScreen(): JSX.Element {
             Start in the Plan tab, describe your trip and stops, and your route will appear here.
           </Text>
         </Animated.View>
-        <Animated.View entering={FadeInUp.duration(400).delay(300)}>
-          <Pressable
-            onPress={handleLoadDemo}
-            style={({ pressed }) => [styles.demoButton, pressed && styles.demoButtonPressed]}
-          >
-            <Ionicons name="map" size={20} color={Colors.primary.teal} />
-            <Text style={styles.demoButtonText}>Load demo route</Text>
-          </Pressable>
-        </Animated.View>
       </Animated.View>
     </SafeAreaView>
   );
@@ -250,26 +248,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Spacing.sm,
     maxWidth: 280,
-  },
-  demoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    marginTop: Spacing.xl,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: 14,
-    backgroundColor: Colors.effects.glassDark,
-    borderWidth: 1,
-    borderColor: Colors.effects.glassDarkBorder,
-  },
-  demoButtonPressed: {
-    opacity: 0.8,
-  },
-  demoButtonText: {
-    fontFamily: FontFamily.primary,
-    fontSize: FontSize.base,
-    fontWeight: '600',
-    color: Colors.primary.teal,
   },
 });

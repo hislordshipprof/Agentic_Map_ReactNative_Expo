@@ -1,10 +1,29 @@
-/** Central onboarding card: grid background + blue path + 4 numbered markers. */
+/** Central onboarding card: grid + path + 4 markers with step simulation and brief info. */
 
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
-import { Colors, ColorUtils, FontFamily, FontSize, Layout } from '@/theme';
+import Animated, {
+  FadeIn,
+  FadeInUp,
+  FadeOut,
+  useAnimatedStyle,
+  useSharedValue,
+  useAnimatedReaction,
+  withTiming,
+  runOnJS,
+  interpolate,
+  Easing,
+  SharedValue,
+} from 'react-native-reanimated';
+import { Colors, ColorUtils, FontFamily, FontSize, Layout, Spacing } from '@/theme';
+
+const STEP_LABELS = [
+  'Start — You set your destination',
+  'First stop — Quick errand on the way',
+  'Next stop — Minimal detour',
+  "Done — You've arrived",
+];
 
 const MARKERS = [
   { n: 1, color: '#5EEAD4', icon: 'paper-plane' as const },
@@ -15,9 +34,85 @@ const MARKERS = [
 
 const GRID_SIZE = 10;
 const CELL = 14;
+const MARKER_SIZE = 38;
+const ICON_SIZE = 18;
+const STEP_DURATION_MS = 2200;
+const TRANSITION_MS = 500;
+
+function MarkerNode({
+  marker,
+  index,
+  activeIndex,
+}: {
+  marker: (typeof MARKERS)[0];
+  index: number;
+  activeIndex: SharedValue<number>;
+}) {
+  const scaleStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        scale: interpolate(
+          activeIndex.value,
+          [index - 0.5, index, Math.min(index + 0.5, 3.5)],
+          [1, 1.2, 1]
+        ),
+      },
+    ],
+  }));
+
+  return (
+    <Animated.View
+      entering={FadeInUp.duration(350).delay(320 + index * 80)}
+      style={[
+        styles.marker,
+        scaleStyle,
+        {
+          backgroundColor: marker.color,
+          left: `${12 + index * 24}%`,
+          top: '40%',
+          width: MARKER_SIZE,
+          height: MARKER_SIZE,
+          borderRadius: MARKER_SIZE / 2,
+          marginLeft: -MARKER_SIZE / 2,
+          marginTop: -MARKER_SIZE / 2,
+        },
+      ]}
+    >
+      {marker.icon ? (
+        <Ionicons name={marker.icon} size={ICON_SIZE} color="#FFF" />
+      ) : (
+        <Text style={styles.markerNum}>{marker.n}</Text>
+      )}
+    </Animated.View>
+  );
+}
 
 export const RouteGridCard: React.FC = () => {
   const cells = Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, i) => i);
+  const activeIndex = useSharedValue(0);
+  const [stepLabel, setStepLabel] = useState(STEP_LABELS[0]);
+
+  const updateLabel = useCallback((v: number) => {
+    setStepLabel(STEP_LABELS[v] ?? STEP_LABELS[0]);
+  }, []);
+
+  useAnimatedReaction(
+    () => Math.round(activeIndex.value),
+    (v) => {
+      runOnJS(updateLabel)(v);
+    }
+  );
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const next = (Math.round(activeIndex.value) + 1) % 4;
+      activeIndex.value = withTiming(next, {
+        duration: TRANSITION_MS,
+        easing: Easing.inOut(Easing.ease),
+      });
+    }, STEP_DURATION_MS);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <Animated.View
@@ -44,19 +139,23 @@ export const RouteGridCard: React.FC = () => {
       <View style={styles.path}>
         <View style={styles.pathLine} />
         {MARKERS.map((m, i) => (
-          <Animated.View
-            key={m.n}
-            entering={FadeInUp.duration(350).delay(320 + i * 80)}
-            style={[styles.marker, { backgroundColor: m.color, left: `${12 + i * 24}%`, top: '40%' }]}
-          >
-            {m.icon ? (
-              <Ionicons name={m.icon} size={14} color="#FFF" />
-            ) : (
-              <Text style={styles.markerNum}>{m.n}</Text>
-            )}
-          </Animated.View>
+          <MarkerNode key={m.n} marker={m} index={i} activeIndex={activeIndex} />
         ))}
       </View>
+
+      <Animated.View
+        entering={FadeIn.duration(400).delay(600)}
+        style={styles.stepInfo}
+      >
+        <Animated.Text
+          key={stepLabel}
+          entering={FadeIn.duration(280)}
+          exiting={FadeOut.duration(200)}
+          style={styles.stepLabel}
+        >
+          {stepLabel}
+        </Animated.Text>
+      </Animated.View>
     </Animated.View>
   );
 };
@@ -98,18 +197,33 @@ const styles = StyleSheet.create({
   },
   marker: {
     position: 'absolute',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: -14,
-    marginTop: -14,
+    shadowColor: Colors.primary.teal,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 6,
   },
   markerNum: {
     fontFamily: FontFamily.primary,
-    fontSize: FontSize.sm,
+    fontSize: FontSize.base,
     fontWeight: '700',
     color: '#FFF',
+  },
+  stepInfo: {
+    position: 'absolute',
+    left: Spacing.lg,
+    right: Spacing.lg,
+    bottom: Spacing.lg,
+    minHeight: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepLabel: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.sm,
+    color: Colors.dark.text.secondary,
+    textAlign: 'center',
   },
 });

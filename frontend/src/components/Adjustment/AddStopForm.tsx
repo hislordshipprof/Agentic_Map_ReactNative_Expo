@@ -1,4 +1,4 @@
-/** Search and select a place to add or replace a stop. Uses stub when places API absent. */
+/** Search and select a place to add or replace a stop. Uses placesApi.search. */
 
 import React, { useState, useCallback } from 'react';
 import {
@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { GlassCard } from '@/components/Common';
 import { Colors, Spacing, FontFamily, FontSize, ColorUtils } from '@/theme';
 import type { LatLng } from '@/types/route';
+import { placesApi } from '@/services/api/places';
 
 export interface AddStopPlace {
   placeId: string;
@@ -32,16 +33,8 @@ export interface AddStopFormProps {
   mode?: 'add' | 'replace';
   replaceStopId?: string;
   replaceStopName?: string;
-}
-
-async function searchPlacesStub(query: string): Promise<AddStopPlace[]> {
-  await new Promise((r) => setTimeout(r, 400));
-  const q = (query || 'coffee').toLowerCase();
-  return [
-    { placeId: 'stub-1', name: `${q || 'Coffee'} Shop A`, address: '123 Main St', location: { lat: 37.78, lng: -122.41 } },
-    { placeId: 'stub-2', name: `${q || 'Coffee'} Shop B`, address: '456 Oak Ave', location: { lat: 37.79, lng: -122.40 } },
-    { placeId: 'stub-3', name: `${q || 'Coffee'} Station`, address: '789 Pine Rd', location: { lat: 37.77, lng: -122.42 } },
-  ];
+  /** Optional location (e.g. route center) for biasing place search */
+  location?: { lat: number; lng: number };
 }
 
 export const AddStopForm: React.FC<AddStopFormProps> = ({
@@ -49,20 +42,41 @@ export const AddStopForm: React.FC<AddStopFormProps> = ({
   onCancel,
   mode = 'add',
   replaceStopName,
+  location,
 }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<AddStopPlace[]>([]);
   const [searching, setSearching] = useState(false);
 
   const handleSearch = useCallback(async () => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
     setSearching(true);
     try {
-      const list = await searchPlacesStub(query);
-      setResults(list);
+      const res = await placesApi.search({
+        query: query.trim(),
+        location: location ?? { lat: 0, lng: 0 },
+        limit: 10,
+      });
+      if (!res.success) {
+        setResults([]);
+        return;
+      }
+      const raw = (res.data as { places?: Array<{ placeId?: string; id?: string; name: string; address?: string; location?: { lat: number; lng: number } }> })?.places ?? [];
+      setResults(
+        raw.map((p) => ({
+          placeId: (p.placeId ?? p.id) || p.name,
+          name: p.name,
+          address: p.address,
+          location: (p.location ?? { lat: 0, lng: 0 }) as LatLng,
+        }))
+      );
     } finally {
       setSearching(false);
     }
-  }, [query]);
+  }, [query, location]);
 
   const title = mode === 'replace' && replaceStopName
     ? `Replace ${replaceStopName}`

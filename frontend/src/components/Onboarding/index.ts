@@ -4,6 +4,8 @@ export { PaginationDots } from './PaginationDots';
 export type { PaginationDotsProps } from './PaginationDots';
 export { OnboardingCta } from './OnboardingCta';
 export type { OnboardingCtaProps } from './OnboardingCta';
+export { OnboardingProgressBar } from './OnboardingProgressBar';
+export type { OnboardingProgressBarProps } from './OnboardingProgressBar';
 export { PulsatingRings } from './PulsatingRings';
 export type { PulsatingRingsProps } from './PulsatingRings';
 export { RouteDiagram } from './RouteDiagram';

@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, AppState, type AppStateStatus } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -13,6 +13,31 @@ import * as SplashScreen from 'expo-splash-screen';
 import { Provider } from 'react-redux';
 import { store } from '@/redux/store';
 import { LoadingOverlay, ErrorDialog } from '@/components/Common';
+import { QueryClient, onlineManager, focusManager } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 5 * 60 * 1000, retry: 1 },
+  },
+});
+
+const asyncStoragePersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: 'AGENTIC_QUERY_CACHE',
+  throttleTime: 1000,
+});
+
+function shouldDehydrateQuery(query: { queryKey: readonly unknown[] }): boolean {
+  const k = query.queryKey;
+  if (!Array.isArray(k) || k[0] !== 'api') return false;
+  if (k[1] === 'anchors') return true;
+  if (k[1] === 'user' && (k[2] === 'profile' || k[2] === 'preferences')) return true;
+  return false;
+}
 
 // Prevent the splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -38,6 +63,19 @@ export default function RootLayout(): JSX.Element {
     onLayoutRootView();
   }, [onLayoutRootView]);
 
+  useEffect(() => {
+    const unsubNet = NetInfo.addEventListener((state) => {
+      onlineManager.setOnline(!!state.isConnected);
+    });
+    const subApp = AppState.addEventListener('change', (s: AppStateStatus) => {
+      focusManager.setFocused(s === 'active');
+    });
+    return () => {
+      unsubNet();
+      subApp.remove();
+    };
+  }, []);
+
   // Show loading state instead of returning null
   if (!fontsLoaded && !fontError) {
     return (
@@ -54,24 +92,32 @@ export default function RootLayout(): JSX.Element {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Provider store={store}>
-        <View style={{ flex: 1 }}>
-          <StatusBar style="auto" />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-            }}
-          >
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-            <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
-            <Stack.Screen name="+not-found" />
-          </Stack>
-          <LoadingOverlay fullScreen />
-        </View>
-        <ErrorDialog />
-      </Provider>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{
+          persister: asyncStoragePersister,
+          dehydrateOptions: { shouldDehydrateQuery },
+        }}
+      >
+        <Provider store={store}>
+          <View style={{ flex: 1 }}>
+            <StatusBar style="auto" />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+              }}
+            >
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+              <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+            <LoadingOverlay fullScreen />
+          </View>
+          <ErrorDialog />
+        </Provider>
+      </PersistQueryClientProvider>
     </GestureHandlerRootView>
   );
 }

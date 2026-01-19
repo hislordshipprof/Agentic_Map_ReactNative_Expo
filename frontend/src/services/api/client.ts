@@ -85,6 +85,8 @@ const buildHeaders = (options: RequestOptions = {}): Headers => {
 
   if (!options.skipAuth && authToken) {
     headers.set('Authorization', `Bearer ${authToken}`);
+  } else if (!options.skipAuth && !authToken && (__DEV__ || process.env.NODE_ENV === 'development')) {
+    headers.set('X-User-Id', 'dev@local');
   }
 
   return headers;
@@ -103,13 +105,14 @@ const normalizeError = (error: unknown, status?: number): ApiError => {
   }
 
   if (typeof error === 'object' && error !== null) {
-    const errorObj = error as Record<string, unknown>;
+    const o = error as Record<string, unknown>;
+    const e = (o.error as Record<string, unknown> | undefined) ?? o;
     return {
-      code: (errorObj.code as string) || 'UNKNOWN_ERROR',
-      message: (errorObj.message as string) || 'An unexpected error occurred',
-      status: (errorObj.status as number) || status || 500,
-      details: errorObj.details as Record<string, unknown> | undefined,
-      suggestions: errorObj.suggestions as string[] | undefined,
+      code: (e.code as string) ?? 'UNKNOWN_ERROR',
+      message: (e.message as string) ?? 'An unexpected error occurred',
+      status: (e.status as number) ?? (o.status as number) ?? status ?? 500,
+      details: e.details as Record<string, unknown> | undefined,
+      suggestions: e.suggestions as string[] | undefined,
     };
   }
 

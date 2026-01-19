@@ -15,7 +15,7 @@ import {
   Spacing,
   Layout,
 } from '@/theme';
-import { Skip, PaginationDots, OnboardingCta, PulsatingRings } from '@/components/Onboarding';
+import { Skip, PaginationDots, OnboardingCta, OnboardingProgressBar, PulsatingRings } from '@/components/Onboarding';
 import { ActionChip, ActionChipGroup } from '@/components/Common';
 
 const ONBOARDING_KEY = '@agentic_map:onboarding_complete';
@@ -67,37 +67,41 @@ export default function WelcomeScreen() {
               <Text style={styles.subtitle}>Tell us your destination in plain English</Text>
               <Text style={styles.subtitle}>No more tapping through menus.</Text>
             </View>
-            <View style={styles.locationPinWrap}>
-              <Pressable style={({ pressed }) => [styles.locationPin, pressed && styles.locationPinPressed]}>
-                <Ionicons name="location-outline" size={20} color={Colors.primary.teal} />
-              </Pressable>
-            </View>
+            <Pressable
+              style={({ pressed }) => [styles.locationPin, pressed && styles.locationPinPressed]}
+            >
+              <Ionicons name="location-outline" size={20} color={Colors.primary.teal} />
+            </Pressable>
           </Animated.View>
 
           <Animated.View
             entering={FadeInUp.duration(400).delay(260)}
             style={styles.exampleCard}
           >
-            <Text style={styles.exampleText} numberOfLines={2}>
-              Take me home with stops at Starbucks and Walmart
-            </Text>
-            <Pressable style={({ pressed }) => [styles.micBtn, pressed && styles.micBtnPressed]}>
-              <Ionicons name="mic-outline" size={22} color={Colors.primary.teal} />
-            </Pressable>
-          </Animated.View>
-
-          <Animated.View entering={FadeInUp.duration(350).delay(340)}>
-            <ActionChipGroup direction="horizontal" wrap gap={Spacing.sm}>
-              <ActionChip label="Home" onPress={() => {}} variant="suggested" />
-              <ActionChip label="Work" onPress={() => {}} variant="suggested" />
-              <ActionChip label="Grocery store" onPress={() => {}} variant="suggested" />
-            </ActionChipGroup>
+            <View style={styles.exampleRow}>
+              <Text style={styles.exampleText} numberOfLines={2}>
+                Take me home with stops at Starbucks and Walmart
+              </Text>
+              <Pressable style={({ pressed }) => [styles.micBtn, pressed && styles.micBtnPressed]}>
+                <Ionicons name="mic-outline" size={22} color={Colors.primary.teal} />
+              </Pressable>
+            </View>
+            <View style={styles.chipsInCard}>
+              <ActionChipGroup direction="horizontal" wrap={false} gap={Spacing.sm}>
+                <ActionChip label="Home" onPress={() => {}} variant="suggested" size="small" />
+                <ActionChip label="Work" onPress={() => {}} variant="suggested" size="small" />
+                <ActionChip label="Grocery store" onPress={() => {}} variant="suggested" size="small" />
+              </ActionChipGroup>
+            </View>
           </Animated.View>
         </ScrollView>
 
         <Animated.View entering={FadeIn.duration(300).delay(400)} style={styles.footer}>
-          <PaginationDots activeStep={1} />
-          <OnboardingCta label="Next" onPress={() => router.push('/onboarding/features')} />
+          <OnboardingProgressBar step={1} />
+          <View style={styles.footerRow}>
+            <PaginationDots activeStep={1} />
+            <OnboardingCta label="Next" onPress={() => router.push('/onboarding/features')} />
+          </View>
         </Animated.View>
       </View>
     </SafeAreaView>
@@ -139,13 +143,15 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.base,
   },
   subtitleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    position: 'relative',
     marginBottom: Spacing['2xl'],
     paddingHorizontal: Spacing.sm,
+    minHeight: 48,
   },
   subtitleBlock: {
-    flex: 1,
+    width: '100%',
+    paddingRight: 44,
+    alignItems: 'center',
   },
   subtitle: {
     fontFamily: FontFamily.primary,
@@ -154,10 +160,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
-  locationPinWrap: {
-    marginLeft: Spacing.sm,
-  },
   locationPin: {
+    position: 'absolute',
+    right: 0,
+    top: 4,
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -169,8 +175,6 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   exampleCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
     width: '100%',
     backgroundColor: Colors.effects.glassDark,
     borderWidth: 1,
@@ -179,6 +183,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.base,
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.xl,
+  },
+  exampleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.md,
   },
   exampleText: {
@@ -199,12 +207,20 @@ const styles = StyleSheet.create({
   micBtnPressed: {
     opacity: 0.8,
   },
+  chipsInCard: {
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.effects.glassDarkBorder,
+  },
   footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: Spacing.xl,
     paddingBottom: Spacing['2xl'],
     paddingTop: Spacing.base,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 });

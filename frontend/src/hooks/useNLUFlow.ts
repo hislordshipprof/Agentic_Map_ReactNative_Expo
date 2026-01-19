@@ -26,6 +26,7 @@ import {
   clearNLU,
 } from '@/redux/slices';
 import type { NLUResponse, Intent, Entities, ConfidenceLevel } from '@/types/nlu';
+import { errandApi } from '@/services/api/errand';
 
 /**
  * Confidence thresholds per requirements
@@ -68,7 +69,7 @@ export interface UseNLUFlowResult {
   retryCount: number;
 
   // Actions
-  processUtterance: (utterance: string) => Promise<void>;
+  processUtterance: (utterance: string, currentLocation?: { lat: number; lng: number }) => Promise<void>;
   onNLUResponse: (response: NLUResponse) => void;
   confirmCurrentIntent: () => void;
   rejectAndRephrase: () => void;
@@ -124,60 +125,6 @@ export const useNLUFlow = (): UseNLUFlowResult => {
   );
 
   /**
-   * Process a user utterance and determine the flow
-   */
-  const processUtterance = useCallback(
-    async (_utterance: string) => {
-      setFlowState('processing');
-
-      try {
-        // In a real implementation, this would call the API
-        // For now, we simulate the NLU response processing
-
-        // The actual API call would be:
-        // const response = await api.processNLU(utterance);
-        // dispatch(processNLUResponse(response));
-
-        // After processing, determine the flow based on confidence
-        // This is where we'd check the response confidence
-
-        // Simulated logic for demonstration:
-        // In real implementation, this comes from the API response
-        const simulatedConfidence = lastConfidence ?? 0;
-        const level = getConfidenceLevel(simulatedConfidence);
-
-        switch (level) {
-          case 'HIGH':
-            setFlowState('high_confidence');
-            dispatch(setConfirmationRequired(false));
-            break;
-
-          case 'MEDIUM':
-            setFlowState('confirmation_required');
-            dispatch(setConfirmationRequired(true));
-            break;
-
-          case 'LOW':
-            // Check if we should escalate
-            if (lowConfidenceRetries >= CONFIDENCE_THRESHOLDS.MAX_RETRIES) {
-              setFlowState('escalating');
-              dispatch(startEscalation());
-              // Trigger escalation to Gemini 3.0 Pro
-              // await escalateToAdvancedAgent(utterance);
-            } else {
-              setFlowState('alternatives_required');
-            }
-            break;
-        }
-      } catch (error) {
-        setFlowState('error');
-        console.error('NLU processing error:', error);
-      }
-    },
-    [dispatch, lastConfidence, lowConfidenceRetries]
-  );
-
-  /**
    * Handle NLU API response (called by API service)
    * Use this when you have an NLU response from the API
    */
@@ -214,6 +161,34 @@ export const useNLUFlow = (): UseNLUFlowResult => {
       }
     },
     [dispatch, lowConfidenceRetries]
+  );
+
+  /**
+   * Process a user utterance and determine the flow
+   */
+  const processUtterance = useCallback(
+    async (utterance: string, currentLocation?: { lat: number; lng: number }) => {
+      setFlowState('processing');
+
+      try {
+        const res = await errandApi.processNLU({
+          utterance,
+          currentLocation,
+          context: undefined,
+        });
+        if (!res.success || res.error) {
+          setFlowState('error');
+          return;
+        }
+        if (res.success && res.data) {
+          onNLUResponse(res.data);
+        }
+      } catch (error) {
+        setFlowState('error');
+        console.error('NLU processing error:', error);
+      }
+    },
+    [onNLUResponse]
   );
 
   /**
@@ -284,13 +259,11 @@ export const useNLUFlow = (): UseNLUFlowResult => {
 
   /**
    * Helper: Should we show the alternatives dialog?
+   * Only when we have explicitly entered alternatives_required from an NLU LOW response.
    */
   const shouldShowAlternatives = useCallback(() => {
-    return (
-      flowState === 'alternatives_required' ||
-      (confidenceLevel === 'LOW' && lowConfidenceRetries < CONFIDENCE_THRESHOLDS.MAX_RETRIES)
-    );
-  }, [flowState, confidenceLevel, lowConfidenceRetries]);
+    return flowState === 'alternatives_required';
+  }, [flowState]);
 
   /**
    * Helper: Should we escalate to Gemini 3.0 Pro?

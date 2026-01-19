@@ -23,7 +23,7 @@ import {
   Spacing,
   Layout,
 } from '@/theme';
-import { Skip, PaginationDots, OnboardingCta, RouteDiagram } from '@/components/Onboarding';
+import { Skip, PaginationDots, OnboardingCta, OnboardingProgressBar, RouteDiagram } from '@/components/Onboarding';
 
 const ONBOARDING_KEY = '@agentic_map:onboarding_complete';
 const PROGRESS_WIDTH = 200;
@@ -114,8 +114,11 @@ export default function FeaturesScreen() {
         </ScrollView>
 
         <Animated.View entering={FadeIn.duration(300).delay(480)} style={styles.footer}>
-          <PaginationDots activeStep={2} />
-          <OnboardingCta label="Next" onPress={() => router.push('/onboarding/ready')} />
+          <OnboardingProgressBar step={2} />
+          <View style={styles.footerRow}>
+            <PaginationDots activeStep={2} />
+            <OnboardingCta label="Next" onPress={() => router.push('/onboarding/ready')} />
+          </View>
         </Animated.View>
       </View>
     </SafeAreaView>
@@ -245,11 +248,13 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: Spacing.xl,
     paddingBottom: Spacing['2xl'],
     paddingTop: Spacing.base,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 });

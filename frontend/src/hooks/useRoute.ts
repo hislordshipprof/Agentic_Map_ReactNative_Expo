@@ -48,8 +48,6 @@ export function useRoute() {
   const updateTotals = useCallback((t: { totalDistance: number; totalTime: number }) => dispatch(updateRouteTotals(t)), [dispatch]);
   const updatePolylineAction = useCallback((p: string) => dispatch(updatePolyline(p)), [dispatch]);
 
-  const setPendingFromMock = useCallback((mock: Route) => dispatch(setPendingRoute(mock)), [dispatch]);
-
   return {
     pending,
     confirmed,
@@ -70,6 +68,5 @@ export function useRoute() {
     exitAdjustment,
     updateTotals,
     updatePolyline: updatePolylineAction,
-    setPendingFromMock,
   };
 }

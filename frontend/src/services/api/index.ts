@@ -7,6 +7,12 @@
 // API Client
 export { apiClient, setAuthToken, getAuthToken } from './client';
 
+// Query keys for TanStack Query
+export { queryKeys } from './queryKeys';
+
+// TanStack Query hooks
+export { useAnchors, useNavigateWithStops } from './hooks';
+
 // Errand API (route planning)
 export { errandApi } from './errand';
 

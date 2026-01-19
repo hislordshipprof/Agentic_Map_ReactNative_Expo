@@ -39,10 +39,13 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: Layout.radiusFull,
-    backgroundColor: Colors.dark.text.tertiary,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: Colors.dark.text.tertiary,
   },
   dotActive: {
     width: 24,
     backgroundColor: Colors.primary.teal,
+    borderWidth: 0,
   },
 });
