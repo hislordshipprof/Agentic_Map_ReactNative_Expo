@@ -1,13 +1,16 @@
 /**
- * Ensures the Google Maps API key is never committed. Replaces any value in
- * AndroidManifest with ${GOOGLE_MAPS_API_KEY} and patches app/build.gradle to
- * read from local.properties or GOOGLE_MAPS_API_KEY env at build time.
+ * Keeps the Google Maps API key out of git. (1) File-backed replace of any real key
+ * in AndroidManifest. (2) Patches app/build.gradle to read GOOGLE_MAPS_API_KEY
+ * from local.properties or env. app.config.android.config.googleMaps.apiKey must
+ * be "${GOOGLE_MAPS_API_KEY}" (literal) so the key is never baked in at prebuild.
  */
 
-const { withAndroidManifest, withAppBuildGradle } = require("@expo/config-plugins");
+const { withAppBuildGradle, withDangerousMod } = require("@expo/config-plugins");
+const fs = require("fs");
+const path = require("path");
 
-const API_KEY_NAME = "com.google.android.geo.API_KEY";
 const PLACEHOLDER = "${GOOGLE_MAPS_API_KEY}";
+const RE = /(android:name="com\.google\.android\.geo\.API_KEY"\s*android:value=")[^"]*(")/g;
 
 const GRADLE_KEY_BLOCK = `def googleMapsKey = ""
 try {
@@ -26,16 +29,15 @@ if (googleMapsKey == null || googleMapsKey == "")
 const MANIFEST_PLACEHOLDERS_LINE = "        manifestPlaceholders = [GOOGLE_MAPS_API_KEY: googleMapsKey]\n";
 
 function withGoogleMapsApiKeyPlaceholder(config) {
-  config = withAndroidManifest(config, (cfg) => {
-    const m = cfg.modResults;
-    if (typeof m === "string") {
-      cfg.modResults = m.replace(
-        new RegExp(`(android:name="${API_KEY_NAME.replace(/\./g, "\\.")}"\\s*android:value=")[^"]*(")`, "g"),
-        `$1${PLACEHOLDER}$2`
-      );
-    }
+  config = withDangerousMod(config, ["android", async (cfg) => {
+    const root = cfg.modRequest?.projectRoot ?? process.cwd();
+    const p = path.join(root, "android", "app", "src", "main", "AndroidManifest.xml");
+    if (!fs.existsSync(p)) return cfg;
+    const s = fs.readFileSync(p, "utf8");
+    const next = s.replace(RE, `$1${PLACEHOLDER}$2`);
+    if (next !== s) fs.writeFileSync(p, next);
     return cfg;
-  });
+  }]);
 
   config = withAppBuildGradle(config, (cfg) => {
     let g = cfg.modResults;

@@ -1,0 +1,4 @@
+# Copy to local.properties. local.properties is gitignored.
+# Add your key so Gradle can inject it into AndroidManifest at build time.
+#
+# GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here

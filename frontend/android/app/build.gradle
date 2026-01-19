@@ -4,6 +4,18 @@ apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
+def googleMapsKey = ""
+try {
+    def loc = rootProject.file("local.properties")
+    if (loc.exists()) {
+        def p = new Properties()
+        p.load(loc.newDataInputStream())
+        googleMapsKey = p.getProperty("GOOGLE_MAPS_API_KEY", "") ?: ""
+    }
+} catch (e) { /* ignore */ }
+if (googleMapsKey == null || googleMapsKey == "")
+    googleMapsKey = System.getenv("GOOGLE_MAPS_API_KEY") ?: ""
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -92,6 +104,7 @@ android {
         versionName "1.0.0"
 
         buildConfigField("boolean", "REACT_NATIVE_UNSTABLE_USE_RUNTIME_SCHEDULER_ALWAYS", (findProperty("reactNative.unstable_useRuntimeSchedulerAlways") ?: true).toString())
+        manifestPlaceholders = [GOOGLE_MAPS_API_KEY: googleMapsKey]
     }
     signingConfigs {
         debug {
