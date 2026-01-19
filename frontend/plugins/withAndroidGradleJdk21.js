@@ -8,7 +8,7 @@ function withAndroidGradleJdk21(config) {
   config = withProjectBuildGradle(config, async (cfg) => {
     if (cfg.modResults && typeof cfg.modResults === "string") {
       cfg.modResults = cfg.modResults.replace(
-        /classpath\s*\(\s*['"]com\.android\.tools\.build:gradle['"]\s*\)/,
+        /classpath\s*\(\s*['"]com\.android\.tools\.build:gradle(:[^'"]*)?['"]\s*\)/,
         "classpath('com.android.tools.build:gradle:8.4.2')"
       );
     }
@@ -28,7 +28,7 @@ function withAndroidGradleJdk21(config) {
       );
       if (fs.existsSync(gp)) {
         let c = fs.readFileSync(gp, "utf8");
-        c = c.replace(/gradle-8\.3-all\.zip/, "gradle-8.6-all.zip");
+        c = c.replace(/gradle-8\.(3|4|5)-all\.zip/, "gradle-8.6-all.zip");
         fs.writeFileSync(gp, c);
       }
       return cfg;

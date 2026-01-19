@@ -45,6 +45,7 @@ import {
   FontFamily,
   FontSize,
 } from '@/theme';
+import { InputValidator } from '@/services/security';
 
 /**
  * UserInputField Props
@@ -121,10 +122,20 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
     focusAnimation.value = withSpring(0, SpringConfig.snappy);
   }, []);
 
-  // Handle send
+  // Handle send with input validation
   const handleSend = useCallback(() => {
-    const trimmedText = text.trim();
-    if (trimmedText.length === 0 || disabled || isLoading) return;
+    if (disabled || isLoading) return;
+
+    // Validate and sanitize input
+    const validation = InputValidator.validateUtterance(text);
+    if (!validation.isValid) {
+      // Input is invalid - don't send
+      // Could show a toast here, but for now just ignore
+      if (__DEV__) {
+        console.warn('[UserInputField] Invalid input:', validation.error);
+      }
+      return;
+    }
 
     // Animate button press
     sendButtonScale.value = withSequence(
@@ -132,7 +143,8 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
       withSpring(1, SpringConfig.bouncy)
     );
 
-    onSend(trimmedText);
+    // Send sanitized input
+    onSend(validation.sanitized);
     setText('');
     sendButtonGlow.value = withTiming(0, { duration: 200 });
     Keyboard.dismiss();

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CacheService, CACHE_TTL } from '../cache/cache.service';
 import type { Coordinates } from '../../common/types';
@@ -28,10 +28,37 @@ export class GooglePlacesService {
   }
 
   private async fetch(url: string, params: Record<string, string>): Promise<unknown> {
+    if (!this.apiKey?.trim()) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'MISSING_API_KEY',
+            message: 'GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY is not set. Add it to .env or set the environment variable.',
+            suggestions: ['Copy .env.example to .env and set GOOGLE_MAPS_API_KEY (or GOOGLE_PLACES_API_KEY)', 'Get a key at https://console.cloud.google.com/apis/credentials'],
+          },
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
     const u = new URL(url);
     Object.entries({ ...params, key: this.apiKey }).forEach(([k, v]) => u.searchParams.set(k, v));
     const res = await fetch(u.toString());
-    if (!res.ok) throw new Error(`Google Places API error: ${res.status}`);
+    if (!res.ok) {
+      const t = await res.text();
+      if (res.status === 429) {
+        throw new HttpException(
+          {
+            error: {
+              code: 'API_QUOTA_EXCEEDED',
+              message: 'Google Places API quota exceeded.',
+              suggestions: ['Retry later', 'Check your API quota in Google Cloud Console'],
+            },
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      throw new Error(`Google Places API error: ${res.status} ${t}`);
+    }
     const json = (await res.json()) as { status: string; error_message?: string };
     if (json.status !== 'OK' && json.status !== 'ZERO_RESULTS') {
       throw new Error((json as { error_message?: string }).error_message ?? json.status);

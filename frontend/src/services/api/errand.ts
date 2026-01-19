@@ -77,7 +77,9 @@ export const errandApi = {
   processNLU: async (
     request: NLUProcessRequest
   ): Promise<ApiResponse<NLUProcessResponse>> => {
-    return apiClient.post<NLUProcessResponse>('/nlu/process', request);
+    return apiClient.post<NLUProcessResponse>('/nlu/process', request, {
+      timeout: 45000, // Gemini/backend can be slow
+    });
   },
 
   /**

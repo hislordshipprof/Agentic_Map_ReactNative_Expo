@@ -178,7 +178,7 @@ export const useNLUFlow = (): UseNLUFlowResult => {
         });
         if (!res.success || res.error) {
           setFlowState('error');
-          return;
+          throw new Error(res.error?.message ?? 'Could not understand. Please try again.');
         }
         if (res.success && res.data) {
           onNLUResponse(res.data);
@@ -186,6 +186,7 @@ export const useNLUFlow = (): UseNLUFlowResult => {
       } catch (error) {
         setFlowState('error');
         console.error('NLU processing error:', error);
+        throw error instanceof Error ? error : new Error(String(error));
       }
     },
     [onNLUResponse]

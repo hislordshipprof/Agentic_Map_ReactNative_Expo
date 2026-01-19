@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { Coordinates } from '../../../common/types';
 import { DetourBufferService } from './detour-buffer.service';
 import { EntityResolverService, type AnchorInput, type ResolvedStop } from './entity-resolver.service';
@@ -42,7 +42,7 @@ export class ErrandService {
     const anchors = inp.anchors ?? [];
     const dest = inp.destination.location
       ? { name: inp.destination.name, location: inp.destination.location }
-      : await this.entity.resolveDestination(inp.destination.name, anchors);
+      : await this.entity.resolveDestination(inp.destination.name, anchors, inp.origin);
 
     const direct = await this.maps.getDirections(inp.origin, dest.location);
     if (!direct) throw new Error('Could not get direct route');
@@ -108,6 +108,18 @@ export class ErrandService {
     }
 
     const used = Math.round(totalExtraM);
+    if (used > bufferM) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'ROUTE_EXCEEDS_BUDGET',
+            message: 'The requested stops exceed the detour budget for this route.',
+            suggestions: ['Remove one or more stops', 'Choose a longer direct route to increase the detour budget'],
+          },
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     const route = this.routeBuilder.build({
       origin: { name: 'Origin', location: inp.origin },
       destination: { name: dest.name, location: dest.location },

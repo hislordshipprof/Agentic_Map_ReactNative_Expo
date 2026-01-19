@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, HttpException, HttpStatus } from '@nestjs/common';
 import { DisambiguateDto } from '../dtos/places.dto';
 import { DisambiguationService } from '../disambiguation.service';
 import { GooglePlacesService } from '../google-places.service';
@@ -25,16 +25,41 @@ export class PlacesController {
     const radiusM = radius ? parseInt(radius, 10) : 10000;
     const limitN = limit ? parseInt(limit, 10) : 10;
     const list = await this.placeSearch.searchPlaces(query, location, radiusM, limitN);
+    if (list.length === 0 && query?.trim()) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'NO_RESULTS_FOUND',
+            message: `No places found for "${query.trim()}".`,
+            suggestions: ['Try a different query or a larger search area', 'Check spelling'],
+          },
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
     return { places: list };
   }
 
   @Post('disambiguate')
   async disambiguate(@Body() dto: DisambiguateDto) {
-    return this.disambiguation.disambiguate({
+    const result = await this.disambiguation.disambiguate({
       query: dto.query,
       candidates: dto.candidates,
       context: dto.context,
     });
+    if (result.candidates.length >= 2 && !result.recommendedId) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'DISAMBIGUATION_REQUIRED',
+            message: 'Multiple matching places; please choose one.',
+            suggestions: ['Use POST /places/disambiguate with context.origin to get a recommendation', 'Or select a place ID from the candidates list'],
+          },
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return result;
   }
 
   @Get('nearby')
@@ -49,6 +74,18 @@ export class PlacesController {
     const radiusM = radius ? parseInt(radius, 10) : 5000;
     const limitN = limit ? parseInt(limit, 10) : 10;
     const list = await this.google.nearby(location, category, radiusM, limitN);
+    if (list.length === 0 && category?.trim()) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'NO_RESULTS_FOUND',
+            message: `No nearby places found for category "${category.trim()}".`,
+            suggestions: ['Try a different category or a larger radius', 'Move to a different area'],
+          },
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
     return { places: list };
   }
 
@@ -66,7 +103,18 @@ export class PlacesController {
   @Get(':placeId')
   async getDetails(@Param('placeId') placeId: string) {
     const p = await this.google.getPlaceDetails(placeId);
-    if (!p) throw new Error('Place not found');
+    if (!p) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'NO_RESULTS_FOUND',
+            message: `Place not found: ${placeId}.`,
+            suggestions: ['Check the place ID', 'The place may have been removed from Google Places'],
+          },
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
     return {
       id: p.placeId,
       name: p.name,

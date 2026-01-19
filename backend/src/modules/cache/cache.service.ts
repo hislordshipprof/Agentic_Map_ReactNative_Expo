@@ -20,6 +20,7 @@ export class CacheService implements OnModuleDestroy {
     if (url) {
       try {
         this.redis = new Redis(url, { maxRetriesPerRequest: 1, lazyConnect: true });
+        this.redis.on('error', () => { /* avoid unhandled ECONNREFUSED when Redis is not running */ });
       } catch {
         this.redis = null;
       }

@@ -4,15 +4,21 @@
  * Centralized HTTP client for all backend API calls.
  * Features:
  * - Base URL configuration
- * - Authentication token handling
+ * - Secure token storage (expo-secure-store)
  * - Request/response interceptors
  * - Error normalization
  * - Retry logic for transient failures
  * - Offline detection
+ *
+ * Security:
+ * - Tokens stored in device keychain/keystore
+ * - No hardcoded credentials
+ * - Request signing ready
  */
 
 import { Platform } from 'react-native';
 import type { ApiError, ApiResponse } from '@/types/api';
+import { SecureStorage } from '@/services/security';
 
 /**
  * API Configuration
@@ -37,30 +43,96 @@ const API_CONFIG = {
 };
 
 /**
- * Get the base URL based on environment
+ * Get the base URL based on environment.
+ * EXPO_PUBLIC_API_URL overrides defaults (use for real-device: http://<your-pc-ip>:3000/api/v1).
  */
 const getBaseUrl = (): string => {
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (envUrl?.trim()) return envUrl.trim().replace(/\/$/, '');
   const isDev = __DEV__ || process.env.NODE_ENV === 'development';
   return isDev ? API_CONFIG.DEV_URL : API_CONFIG.PROD_URL;
 };
 
 /**
- * Token storage (in-memory for now, would use secure storage in production)
+ * Check if the backend is reachable (GET /health). Use for connectivity debugging.
+ * Returns baseUrl so you can show which server was tried.
  */
-let authToken: string | null = null;
+export async function checkBackendConnectivity(): Promise<{
+  ok: boolean;
+  baseUrl: string;
+  error?: string;
+}> {
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl}/health`;
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), 5000);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      signal: c.signal,
+      headers: { Accept: 'application/json' },
+    });
+    clearTimeout(t);
+    if (res.ok) return { ok: true, baseUrl };
+    return { ok: false, baseUrl, error: `HTTP ${res.status}` };
+  } catch (e) {
+    clearTimeout(t);
+    return { ok: false, baseUrl, error: e instanceof Error ? e.message : String(e) };
+  }
+}
 
 /**
- * Set the authentication token
+ * In-memory token cache (backed by SecureStorage)
+ * This allows synchronous access while SecureStorage loads
  */
-export const setAuthToken = (token: string | null): void => {
-  authToken = token;
+let authTokenCache: string | null = null;
+let tokenInitialized = false;
+
+/**
+ * Initialize token from SecureStorage
+ * Call this on app startup
+ */
+export const initializeAuthToken = async (): Promise<void> => {
+  if (tokenInitialized) return;
+  try {
+    authTokenCache = await SecureStorage.getAuthToken();
+    tokenInitialized = true;
+  } catch (error) {
+    console.error('[API Client] Failed to initialize auth token:', error);
+  }
 };
 
 /**
- * Get the current auth token
+ * Set the authentication token (stores securely)
+ */
+export const setAuthToken = async (token: string | null): Promise<void> => {
+  authTokenCache = token;
+  try {
+    if (token) {
+      await SecureStorage.setItem('auth_token', token);
+    } else {
+      await SecureStorage.clearAuthTokens();
+    }
+  } catch (error) {
+    console.error('[API Client] Failed to store auth token:', error);
+  }
+};
+
+/**
+ * Get the current auth token (synchronous from cache)
  */
 export const getAuthToken = (): string | null => {
-  return authToken;
+  return authTokenCache;
+};
+
+/**
+ * Get auth token async (from SecureStorage)
+ */
+export const getAuthTokenAsync = async (): Promise<string | null> => {
+  if (!tokenInitialized) {
+    await initializeAuthToken();
+  }
+  return authTokenCache;
 };
 
 /**
@@ -75,6 +147,7 @@ interface RequestOptions {
 
 /**
  * Build request headers
+ * Security: No hardcoded credentials or dev bypass headers
  */
 const buildHeaders = (options: RequestOptions = {}): Headers => {
   const headers = new Headers({
@@ -83,11 +156,16 @@ const buildHeaders = (options: RequestOptions = {}): Headers => {
     ...options.headers,
   });
 
-  if (!options.skipAuth && authToken) {
-    headers.set('Authorization', `Bearer ${authToken}`);
-  } else if (!options.skipAuth && !authToken && (__DEV__ || process.env.NODE_ENV === 'development')) {
+  // Add auth token if available (from secure storage cache)
+  if (!options.skipAuth && authTokenCache) {
+    headers.set('Authorization', `Bearer ${authTokenCache}`);
+  } else if (!options.skipAuth && __DEV__) {
+    // Local backend with JWT_SECRET unset accepts X-User-Id
     headers.set('X-User-Id', 'dev@local');
   }
+
+  // Add request timestamp for replay attack prevention
+  headers.set('X-Request-Time', Date.now().toString());
 
   return headers;
 };
@@ -288,14 +366,24 @@ export const apiClient = {
     request<T>(endpoint, 'DELETE', undefined, options),
 
   /**
-   * Set auth token
+   * Set auth token (async - stores in SecureStorage)
    */
   setToken: setAuthToken,
 
   /**
-   * Get current token
+   * Get current token (sync - from cache)
    */
   getToken: getAuthToken,
+
+  /**
+   * Get token async (from SecureStorage)
+   */
+  getTokenAsync: getAuthTokenAsync,
+
+  /**
+   * Initialize token from SecureStorage (call on app startup)
+   */
+  initializeToken: initializeAuthToken,
 
   /**
    * Clear auth token

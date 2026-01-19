@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CacheService, CACHE_TTL } from '../cache/cache.service';
 import type { Coordinates } from '../../common/types';
@@ -36,12 +36,40 @@ export class GoogleMapsService {
   }
 
   private async get<T>(path: string, params: Record<string, string>): Promise<T> {
-    const url = new URL(path, this.base);
+    if (!this.apiKey?.trim()) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'MISSING_API_KEY',
+            message: 'GOOGLE_MAPS_API_KEY is not set. Add it to .env or set the environment variable.',
+            suggestions: ['Copy .env.example to .env and set GOOGLE_MAPS_API_KEY', 'Get a key at https://console.cloud.google.com/apis/credentials'],
+          },
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    const pathNorm = path.startsWith('/') ? path : `/${path}`;
+    const url = new URL(`${this.base}${pathNorm}`);
     Object.entries({ ...params, key: this.apiKey }).forEach(([k, v]) =>
       url.searchParams.set(k, v),
     );
     const res = await fetch(url.toString());
-    if (!res.ok) throw new Error(`Google Maps API error: ${res.status}`);
+    if (!res.ok) {
+      const t = await res.text();
+      if (res.status === 429) {
+        throw new HttpException(
+          {
+            error: {
+              code: 'API_QUOTA_EXCEEDED',
+              message: 'Google Maps API quota exceeded.',
+              suggestions: ['Retry later', 'Check your API quota in Google Cloud Console'],
+            },
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      throw new Error(`Google Maps API error: ${res.status} ${t}`);
+    }
     const json = (await res.json()) as { status: string; error_message?: string } & T;
     if (json.status !== 'OK' && json.status !== 'ZERO_RESULTS') {
       throw new Error(json.error_message ?? `Google Maps API: ${json.status}`);
@@ -51,7 +79,7 @@ export class GoogleMapsService {
 
   /**
    * Get directions from origin to destination with optional waypoints.
-   * Returns polyline, total distance (m), total duration (min), and legs.
+   * Uses Routes API (v2 computeRoutes). Returns polyline, total distance (m), total duration (min), and legs.
    */
   async getDirections(
     origin: Coordinates,
@@ -63,41 +91,107 @@ export class GoogleMapsService {
     const cached = await this.cache.get<DirectionsResult>(key);
     if (cached) return cached;
 
-    const o = `${origin.lat},${origin.lng}`;
-    const d = `${destination.lat},${destination.lng}`;
-    const params: Record<string, string> = { origin: o, destination: d };
-    if (waypoints?.length) params.waypoints = wp;
-    const json = await this.get<{
+    if (!this.apiKey?.trim()) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'MISSING_API_KEY',
+            message: 'GOOGLE_MAPS_API_KEY is not set.',
+            suggestions: ['Set GOOGLE_MAPS_API_KEY in .env', 'Ensure the key has Routes API enabled'],
+          },
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    const body = {
+      origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
+      destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
+      ...(waypoints?.length
+        ? {
+            intermediates: waypoints.map((w) => ({
+              location: { latLng: { latitude: w.lat, longitude: w.lng } },
+            })),
+          }
+        : {}),
+      travelMode: 'DRIVE',
+      polylineQuality: 'OVERVIEW',
+      polylineEncoding: 'ENCODED_POLYLINE',
+    };
+
+    const url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': this.apiKey,
+        'X-Goog-FieldMask':
+          'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.startLocation,routes.legs.endLocation,routes.legs.distanceMeters,routes.legs.duration',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await res.text();
+    if (!res.ok) {
+      if (res.status === 429) {
+        throw new HttpException(
+          {
+            error: {
+              code: 'API_QUOTA_EXCEEDED',
+              message: 'Routes API quota exceeded.',
+              suggestions: ['Retry later', 'Check quota in Google Cloud Console'],
+            },
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      throw new Error(`Routes API error: ${res.status} ${text}`);
+    }
+
+    let json: {
       routes?: Array<{
-        overview_polyline?: { points?: string };
+        distanceMeters?: number;
+        duration?: string;
+        polyline?: { encodedPolyline?: string };
         legs?: Array<{
-          distance?: { value?: number };
-          duration?: { value?: number };
-          start_location?: { lat?: number; lng?: number };
-          end_location?: { lat?: number; lng?: number };
+          startLocation?: { latitude?: number; longitude?: number };
+          endLocation?: { latitude?: number; longitude?: number };
+          distanceMeters?: number;
+          duration?: string;
         }>;
       }>;
-    }>('/directions/json', params);
+    };
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error('Routes API returned invalid JSON');
+    }
 
     const route = json.routes?.[0];
-    if (!route?.legs?.length) return null;
+    if (!route) return null;
 
-    const legs: DirectionsLeg[] = route.legs.map((leg, i) => ({
-      distanceM: leg.distance?.value ?? 0,
-      durationMin: Math.round((leg.duration?.value ?? 0) / 60),
+    const parseDurationSec = (s: string | undefined): number => {
+      if (!s) return 0;
+      const m = /^(\d+)s$/.exec(s);
+      return m ? parseInt(m[1], 10) : 0;
+    };
+
+    const legs: DirectionsLeg[] = (route.legs ?? []).map((leg) => ({
+      distanceM: leg.distanceMeters ?? 0,
+      durationMin: Math.round(parseDurationSec(leg.duration) / 60),
       startLocation: {
-        lat: leg.start_location?.lat ?? 0,
-        lng: leg.start_location?.lng ?? 0,
+        lat: leg.startLocation?.latitude ?? 0,
+        lng: leg.startLocation?.longitude ?? 0,
       },
       endLocation: {
-        lat: leg.end_location?.lat ?? 0,
-        lng: leg.end_location?.lng ?? 0,
+        lat: leg.endLocation?.latitude ?? 0,
+        lng: leg.endLocation?.longitude ?? 0,
       },
     }));
 
-    const totalDistanceM = legs.reduce((s, l) => s + l.distanceM, 0);
-    const totalDurationMin = legs.reduce((s, l) => s + l.durationMin, 0);
-    const polyline = route.overview_polyline?.points ?? '';
+    const totalDistanceM = route.distanceMeters ?? legs.reduce((s, l) => s + l.distanceM, 0);
+    const totalDurationMin = Math.round(parseDurationSec(route.duration) / 60) || legs.reduce((s, l) => s + l.durationMin, 0);
+    const polyline = route.polyline?.encodedPolyline ?? '';
 
     const out: DirectionsResult = { polyline, totalDistanceM, totalDurationMin, legs };
     await this.cache.set(key, out, CACHE_TTL.ROUTE_SEC);

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { generateContent } from './gemini-client';
 
@@ -30,6 +30,18 @@ export class GeminiFastService {
   }
 
   async parse(utterance: string): Promise<FastAgentResult> {
+    if (!this.apiKey?.trim()) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'MISSING_API_KEY',
+            message: 'GEMINI_API_KEY is not set. Add it to .env or set the environment variable.',
+            suggestions: ['Copy .env.example to .env and set GEMINI_API_KEY', 'Get a key at https://aistudio.google.com/apikey'],
+          },
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
     const raw = await generateContent(this.apiKey, this.model, SYSTEM, utterance);
     const cleaned = raw.replace(/```json?\s*|\s*```/g, '').trim();
     let obj: unknown;

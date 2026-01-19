@@ -34,8 +34,16 @@ export class DisambiguationService {
       reason = 'Closest to your location';
     } else if (details.length > 0) {
       const byRating = [...details].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-      recommendedId = byRating[0].placeId;
-      reason = 'Highest rated';
+      const first = byRating[0];
+      const second = byRating[1];
+      // If 2+ candidates and top two are tied (same rating), leave recommendedId unset so controller can throw DISAMBIGUATION_REQUIRED
+      if (details.length >= 2 && first && second && (first.rating ?? 0) === (second.rating ?? 0)) {
+        recommendedId = undefined;
+        reason = undefined;
+      } else {
+        recommendedId = first!.placeId;
+        reason = 'Highest rated';
+      }
     }
     return { candidates: details, recommendedId, reason };
   }

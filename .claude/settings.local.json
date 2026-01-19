@@ -6,7 +6,8 @@
       "Skill(expo-app-design)",
       "Bash(npx expo install:*)",
       "Bash(npx tsc:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Skill(frontend-design)"
     ]
   }
 }

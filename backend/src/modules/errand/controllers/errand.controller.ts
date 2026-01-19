@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '../../../common/guards/auth.guard';
 import { NavigateWithStopsDto } from '../dtos/navigate-with-stops.dto';
 import { ErrandService } from '../services/errand.service';
 
 @Controller('errand')
+@UseGuards(AuthGuard)
 export class ErrandController {
   constructor(private readonly errand: ErrandService) {}
 
