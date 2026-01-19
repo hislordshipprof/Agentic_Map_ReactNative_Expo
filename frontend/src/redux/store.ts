@@ -6,12 +6,14 @@ import {
   nluReducer,
   uiReducer,
   offlineReducer,
+  errorReducer,
+  loadingReducer,
 } from './slices';
 
 /**
  * Redux Store Configuration
  *
- * Per requirements-frontend.md Phase 1.4:
+ * Per requirements-frontend.md Phase 1.4 & 5.1-5.2:
  * All state slices implemented:
  * - auth: User authentication and session
  * - conversation: Messages, loading state, errors
@@ -19,6 +21,8 @@ import {
  * - nlu: Intent, confidence, entities
  * - ui: Dialog visibility, modes, toasts
  * - offline: Network status, sync state
+ * - error: Centralized error handling with recovery options
+ * - loading: Enhanced loading states with progress tracking
  */
 export const store = configureStore({
   reducer: {
@@ -28,6 +32,8 @@ export const store = configureStore({
     nlu: nluReducer,
     ui: uiReducer,
     offline: offlineReducer,
+    error: errorReducer,
+    loading: loadingReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

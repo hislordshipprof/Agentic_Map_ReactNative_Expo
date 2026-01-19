@@ -1,15 +1,4 @@
-/**
- * RouteDetails Component - Agentic Mobile Map
- *
- * Route summary card showing distance, time, stops, and detour budget.
- * Beautiful glassmorphism design with animated progress bars.
- *
- * Features:
- * - Total distance and time
- * - Number of stops
- * - Detour budget visualization
- * - Start navigation button
- */
+/** Route summary: distance, duration, stops, detour budget, and Accept/Adjust/Cancel actions. */
 
 import React from 'react';
 import {
@@ -41,27 +30,16 @@ import {
 import type { Route } from '@/types/route';
 import { formatDistance, formatDuration } from '@/types/route';
 
-/**
- * RouteDetails Props
- */
 export interface RouteDetailsProps {
-  /** Route data */
   route: Route;
-  /** Whether navigation can start */
   canNavigate?: boolean;
-  /** Whether route is being optimized */
   isOptimizing?: boolean;
-  /** Callback when start navigation is pressed */
   onStartNavigation?: () => void;
-  /** Callback when edit route is pressed */
   onEditRoute?: () => void;
-  /** Custom style */
+  onCancel?: () => void;
   style?: ViewStyle;
 }
 
-/**
- * Stat Item Component
- */
 const StatItem: React.FC<{
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
@@ -79,9 +57,6 @@ const StatItem: React.FC<{
   </View>
 );
 
-/**
- * Budget Progress Bar Component
- */
 const BudgetProgress: React.FC<{
   used: number;
   total: number;
@@ -89,7 +64,6 @@ const BudgetProgress: React.FC<{
   const progress = Math.min(used / total, 1);
   const percentage = Math.round(progress * 100);
 
-  // Determine color based on usage
   const getProgressColor = () => {
     if (progress <= 0.5) return Colors.semantic.success;
     if (progress <= 0.75) return Colors.semantic.warning;
@@ -129,12 +103,9 @@ const BudgetProgress: React.FC<{
   );
 };
 
-/**
- * Animated Start Button
- */
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-const StartButton: React.FC<{
+const AcceptButton: React.FC<{
   onPress?: () => void;
   disabled?: boolean;
   isLoading?: boolean;
@@ -171,25 +142,25 @@ const StartButton: React.FC<{
       onPressOut={handlePressOut}
       disabled={disabled || isLoading}
       style={[
-        styles.startButton,
+        styles.acceptButton,
         animatedStyle,
-        disabled && styles.startButtonDisabled,
+        disabled && styles.acceptButtonDisabled,
       ]}
     >
-      <Animated.View style={[StyleSheet.absoluteFill, styles.startButtonBg, bgAnimatedStyle]} />
+      <Animated.View style={[StyleSheet.absoluteFill, styles.acceptButtonBg, bgAnimatedStyle]} />
       <LinearGradient
         colors={['rgba(255,255,255,0.1)', 'transparent']}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={[StyleSheet.absoluteFill, { borderRadius: 16 }]}
       />
-      <View style={styles.startButtonContent}>
+      <View style={styles.acceptButtonContent}>
         {isLoading ? (
-          <Text style={styles.startButtonText}>Optimizing...</Text>
+          <Text style={styles.acceptButtonText}>Optimizing...</Text>
         ) : (
           <>
             <Ionicons name="navigate" size={22} color={Colors.dark.text.primary} />
-            <Text style={styles.startButtonText}>Start Navigation</Text>
+            <Text style={styles.acceptButtonText}>Accept & Navigate</Text>
           </>
         )}
       </View>
@@ -197,15 +168,13 @@ const StartButton: React.FC<{
   );
 };
 
-/**
- * RouteDetails Component
- */
 export const RouteDetails: React.FC<RouteDetailsProps> = ({
   route,
   canNavigate = true,
   isOptimizing = false,
   onStartNavigation,
   onEditRoute,
+  onCancel,
   style,
 }) => {
   const { totalDistance, totalTime, stops, detourBudget } = route;
@@ -213,7 +182,6 @@ export const RouteDetails: React.FC<RouteDetailsProps> = ({
   return (
     <Animated.View entering={FadeInUp.duration(500)} style={style}>
       <GlassCard variant="elevated" style={styles.card}>
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={styles.headerIcon}>
@@ -226,20 +194,8 @@ export const RouteDetails: React.FC<RouteDetailsProps> = ({
               </Text>
             </View>
           </View>
-          {onEditRoute && (
-            <Pressable
-              onPress={onEditRoute}
-              style={({ pressed }) => [
-                styles.editButton,
-                pressed && styles.editButtonPressed,
-              ]}
-            >
-              <Ionicons name="create-outline" size={20} color={Colors.primary.teal} />
-            </Pressable>
-          )}
         </View>
 
-        {/* Stats row */}
         <View style={styles.statsRow}>
           <StatItem
             icon="speedometer-outline"
@@ -261,20 +217,37 @@ export const RouteDetails: React.FC<RouteDetailsProps> = ({
           />
         </View>
 
-        {/* Detour budget */}
         <BudgetProgress
           used={detourBudget.used}
           total={detourBudget.total}
         />
 
-        {/* Start button */}
-        <StartButton
+        <AcceptButton
           onPress={onStartNavigation}
           disabled={!canNavigate}
           isLoading={isOptimizing}
         />
 
-        {/* Route quality indicator */}
+        <View style={styles.actionsRow}>
+          {onEditRoute && (
+            <Pressable
+              onPress={onEditRoute}
+              style={({ pressed }) => [styles.adjustButton, pressed && styles.adjustButtonPressed]}
+            >
+              <Ionicons name="create-outline" size={18} color={Colors.primary.teal} />
+              <Text style={styles.adjustButtonText}>Adjust</Text>
+            </Pressable>
+          )}
+          {onCancel && (
+            <Pressable
+              onPress={onCancel}
+              style={({ pressed }) => [styles.cancelButton, pressed && styles.cancelButtonPressed]}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+          )}
+        </View>
+
         <View style={styles.qualityBadge}>
           <Ionicons
             name="checkmark-circle"
@@ -324,18 +297,6 @@ const styles = StyleSheet.create({
     color: Colors.dark.text.tertiary,
     marginTop: 2,
   },
-  editButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: ColorUtils.withAlpha(Colors.primary.teal, 0.1),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  editButtonPressed: {
-    backgroundColor: ColorUtils.withAlpha(Colors.primary.teal, 0.2),
-  },
-  // Stats
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -378,7 +339,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.border,
     marginHorizontal: Spacing.sm,
   },
-  // Budget
   budgetContainer: {
     marginBottom: Spacing.lg,
   },
@@ -424,34 +384,74 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.dark.text.tertiary,
   },
-  // Start button
-  startButton: {
+  acceptButton: {
+    minHeight: 48,
     height: 56,
     borderRadius: 16,
     overflow: 'hidden',
     marginBottom: Spacing.md,
   },
-  startButtonBg: {
+  acceptButtonBg: {
     borderRadius: 16,
     backgroundColor: Colors.primary.teal,
   },
-  startButtonDisabled: {
+  acceptButtonDisabled: {
     opacity: 0.5,
   },
-  startButtonContent: {
+  acceptButtonContent: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
   },
-  startButtonText: {
+  acceptButtonText: {
     fontFamily: FontFamily.primary,
     fontSize: FontSize.base,
     fontWeight: '600',
     color: Colors.dark.text.primary,
   },
-  // Quality badge
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  adjustButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    minHeight: 48,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.effects.glassDarkBorder,
+    backgroundColor: 'transparent',
+  },
+  adjustButtonPressed: {
+    opacity: 0.7,
+  },
+  adjustButtonText: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.primary.teal,
+  },
+  cancelButton: {
+    minHeight: 48,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  cancelButtonPressed: {
+    opacity: 0.7,
+  },
+  cancelButtonText: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.sm,
+    color: Colors.dark.text.tertiary,
+  },
   qualityBadge: {
     flexDirection: 'row',
     alignItems: 'center',

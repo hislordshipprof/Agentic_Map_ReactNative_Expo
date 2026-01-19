@@ -130,6 +130,18 @@ export const Layout = {
 } as const;
 
 /**
+ * BORDER RADIUS - Convenience alias for Layout radius values
+ * Use in styles: borderRadius: BorderRadius.lg
+ */
+export const BorderRadius = {
+  sm: Layout.radiusSmall,
+  md: Layout.radiusMedium,
+  lg: Layout.radiusLarge,
+  xl: Layout.radiusXLarge,
+  full: Layout.radiusFull,
+} as const;
+
+/**
  * ANIMATION DURATIONS - Consistent timing
  * See animations.ts for full animation configurations
  */

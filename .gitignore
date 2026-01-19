@@ -1,9 +1,12 @@
-﻿# ===================================
+# ===================================
 # Agentic Mobile Map - Root .gitignore
 # ===================================
 
-# Documentation (private specifications)
+# Documentation (private specifications & plans)
 docs/
+DESIGN_SYSTEM_SUMMARY.md
+IMPLEMENTATION_PLAN.md
+MAP_AND_DRAG_FIX_PLAN.md
 
 # Dependencies
 node_modules/

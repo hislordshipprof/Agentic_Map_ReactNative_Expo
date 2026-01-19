@@ -48,7 +48,7 @@ export const errandApi = {
    */
   suggestStops: async (
     request: SuggestStopsRequest
-  ): Promise<ApiResponse<SuggestStopsResponse>> => {
+  ): Promise<SuggestStopsResponse> => {
     const params = new URLSearchParams({
       originLat: request.origin.lat.toString(),
       originLng: request.origin.lng.toString(),
@@ -63,7 +63,7 @@ export const errandApi = {
 
     return apiClient.get<SuggestStopsResponse>(
       `/errand/suggest-stops-on-route?${params.toString()}`
-    );
+    ) as unknown as SuggestStopsResponse;
   },
 
   /**

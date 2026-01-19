@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String               @id @default(uuid())
+  email               String?              @unique
+  phone               String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  preferences         Json?
+  anchors             Anchor[]
+  routes              Route[]
+  conversationHistory ConversationHistory[]
+
+  @@map("users")
+}
+
+model Anchor {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  latitude  Float
+  longitude Float
+  address   String?
+  type      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("anchors")
+}
+
+model Place {
+  id             String   @id @default(uuid())
+  googlePlacesId String   @unique @map("google_places_id")
+  name           String
+  address        String?
+  latitude       Float
+  longitude      Float
+  rating         Float?
+  reviewCount    Int?     @map("review_count")
+  openingHours   Json?    @map("opening_hours")
+  category       String?
+  cachedAt       DateTime @default(now()) @map("cached_at")
+  expiresAt      DateTime @map("expires_at")
+  metadata       Json?
+
+  @@index([expiresAt])
+  @@map("places")
+}
+
+model Route {
+  id                String   @id @default(uuid())
+  userId            String?  @map("user_id")
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  startLatitude     Float    @map("start_latitude")
+  startLongitude    Float    @map("start_longitude")
+  endLatitude       Float    @map("end_latitude")
+  endLongitude      Float    @map("end_longitude")
+  stops             Json
+  totalDistanceM    Int      @map("total_distance_m")
+  totalTimeMin      Int      @map("total_time_min")
+  optimizationScore Float?   @map("optimization_score")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("routes")
+}
+
+model ConversationHistory {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  turn             Int
+  userMessage      String   @map("user_message") @db.Text
+  intent           String?
+  intentConfidence Float?   @map("intent_confidence")
+  entities         Json?
+  systemResponse   String?  @map("system_response") @db.Text
+  timestamp        DateTime @default(now())
+
+  @@index([userId])
+  @@index([timestamp])
+  @@map("conversation_history")
+}

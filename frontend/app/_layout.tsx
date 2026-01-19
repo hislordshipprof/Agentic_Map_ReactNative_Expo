@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { View, Text } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -11,6 +12,7 @@ import {
 import * as SplashScreen from 'expo-splash-screen';
 import { Provider } from 'react-redux';
 import { store } from '@/redux/store';
+import { LoadingOverlay, ErrorDialog } from '@/components/Common';
 
 // Prevent the splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -51,19 +53,25 @@ export default function RootLayout(): JSX.Element {
   }
 
   return (
-    <Provider store={store}>
-      <StatusBar style="auto" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-        }}
-      >
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-        <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-    </Provider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <Provider store={store}>
+        <View style={{ flex: 1 }}>
+          <StatusBar style="auto" />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+            }}
+          >
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+            <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
+            <Stack.Screen name="+not-found" />
+          </Stack>
+          <LoadingOverlay fullScreen />
+        </View>
+        <ErrorDialog />
+      </Provider>
+    </GestureHandlerRootView>
   );
 }

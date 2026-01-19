@@ -13,6 +13,8 @@ export { default as routeReducer } from './routeSlice';
 export { default as nluReducer } from './nluSlice';
 export { default as uiReducer } from './uiSlice';
 export { default as offlineReducer } from './offlineSlice';
+export { default as errorReducer } from './errorSlice';
+export { default as loadingReducer } from './loadingSlice';
 
 // Auth actions
 export {
@@ -107,6 +109,31 @@ export {
   setForcedOffline,
   updateCacheStats,
   clearCacheStats,
-  completeSyn,
+  updateLastSyncTime,
+  completeSync,
   resetOffline,
 } from './offlineSlice';
+
+// Error actions
+export {
+  setError,
+  clearError,
+  setErrorDialogVisible,
+  clearErrorHistory,
+  resetErrorCount,
+  resetErrors,
+} from './errorSlice';
+export type { ErrorType, RecoveryOption, AppError, ErrorState } from './errorSlice';
+
+// Loading actions
+export {
+  startOperation,
+  updateProgress,
+  updateMessage as updateLoadingMessage,
+  completeOperation,
+  cancelOperation,
+  setMinimalLoader,
+  clearAllOperations,
+  resetLoading,
+} from './loadingSlice';
+export type { LoadingSliceState } from './loadingSlice';

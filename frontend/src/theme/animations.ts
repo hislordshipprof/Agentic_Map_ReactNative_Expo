@@ -120,7 +120,7 @@ export const EntranceAnimations = {
    * @param duration - Animation duration (ms)
    * @returns Animation config
    */
-  slideUpFadeIn: (distance = 20, duration = 300) => ({
+  slideUpFadeIn: (_distance = 20, duration = 300) => ({
     opacity: withTiming(1, { duration, easing: Easing.out(Easing.cubic) }),
     transform: [
       {
@@ -152,7 +152,7 @@ export const EntranceAnimations = {
    * @param duration - Animation duration (ms)
    * @returns Animation config
    */
-  slideFromRight: (distance = 50, duration = 250) => ({
+  slideFromRight: (_distance = 50, duration = 250) => ({
     opacity: withTiming(1, { duration }),
     transform: [
       {
@@ -170,7 +170,7 @@ export const EntranceAnimations = {
    * @param duration - Animation duration (ms)
    * @returns Animation config
    */
-  slideFromLeft: (distance = 50, duration = 250) => ({
+  slideFromLeft: (_distance = 50, duration = 250) => ({
     opacity: withTiming(1, { duration }),
     transform: [
       {
@@ -368,8 +368,8 @@ export const SpecializedAnimations = {
    * @param index - Message index for stagger
    * @returns Animation config
    */
-  messageBubbleEntrance: (isUser: boolean, index = 0) => {
-    const direction = isUser ? 50 : -50; // Right for user, left for system
+  messageBubbleEntrance: (_isUser: boolean, index = 0) => {
+    // Direction would be: isUser ? 50 : -50 (Right for user, left for system)
     return {
       opacity: withDelay(index * 30, withTiming(1, TimingConfig.normal)),
       transform: [

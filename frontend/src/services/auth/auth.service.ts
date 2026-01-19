@@ -9,7 +9,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { User, AuthTokens, SignInResponse, SignUpData } from './types';
+import type { User, AuthTokens, SignInResponse, SignUpData, AuthProvider } from './types';
 
 const STORAGE_KEYS = {
   USER: '@agentic_map:user',

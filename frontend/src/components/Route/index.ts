@@ -18,3 +18,6 @@ export type { RouteDetailsProps } from './RouteDetails';
 
 export { RouteMap } from './RouteMap';
 export type { RouteMapProps } from './RouteMap';
+
+export { RouteConfirmationScreen } from './RouteConfirmationScreen';
+export type { RouteConfirmationScreenProps } from './RouteConfirmationScreen';

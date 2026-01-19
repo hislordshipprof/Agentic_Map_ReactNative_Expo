@@ -157,9 +157,16 @@ const offlineSlice = createSlice({
     },
 
     /**
+     * Update last sync time
+     */
+    updateLastSyncTime: (state, action: PayloadAction<number>) => {
+      state.lastSyncAt = action.payload;
+    },
+
+    /**
      * Mark sync as complete
      */
-    completeSyn: (state) => {
+    completeSync: (state) => {
       state.syncStatus = 'complete';
       state.lastSyncAt = Date.now();
       state.pendingActions = [];
@@ -184,7 +191,8 @@ export const {
   setForcedOffline,
   updateCacheStats,
   clearCacheStats,
-  completeSyn,
+  updateLastSyncTime,
+  completeSync,
   resetOffline,
 } = offlineSlice.actions;
 

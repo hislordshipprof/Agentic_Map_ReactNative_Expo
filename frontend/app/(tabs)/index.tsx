@@ -15,12 +15,15 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
 // Components
 import { AnimatedMessage } from '@/components/Conversation';
+import { useRoute } from '@/hooks';
+import { mockRoute } from '@/fixtures/mockRoute';
 import {
   GlassCard,
   ThinkingBubble,
@@ -42,6 +45,7 @@ import type { Message } from '@/components/Conversation';
  * Quick action suggestions - pill style chips
  */
 const quickActions = [
+  { id: 'demo', label: 'View demo route', icon: 'map-outline' as const },
   { id: '1', label: 'Generate route', icon: 'navigate-outline' as const },
   { id: '2', label: 'Find stops', icon: 'location-outline' as const },
   { id: '3', label: 'Coffee nearby', icon: 'cafe-outline' as const },
@@ -114,6 +118,8 @@ const TopicCard: React.FC<{
  * Main Conversation Screen
  */
 export default function ConversationScreen(): JSX.Element {
+  const router = useRouter();
+  const { setPendingFromMock } = useRoute();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -221,7 +227,14 @@ export default function ConversationScreen(): JSX.Element {
                     key={action.id}
                     label={action.label}
                     icon={action.icon}
-                    onPress={() => handleQuickAction(action.label)}
+                    onPress={() => {
+                      if (action.id === 'demo') {
+                        setPendingFromMock(mockRoute);
+                        router.push('/(tabs)/route');
+                      } else {
+                        handleQuickAction(action.label);
+                      }
+                    }}
                   />
                 ))}
               </View>
