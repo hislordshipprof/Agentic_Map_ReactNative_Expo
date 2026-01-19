@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { generateContent } from './gemini-client';
 
@@ -40,6 +40,18 @@ export class GeminiAdvancedService {
   }
 
   async process(utterance: string, context?: { previousResult?: string; history?: string }): Promise<AdvancedAgentResult> {
+    if (!this.apiKey?.trim()) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'MISSING_API_KEY',
+            message: 'GEMINI_API_KEY is not set. Add it to .env or set the environment variable.',
+            suggestions: ['Copy .env.example to .env and set GEMINI_API_KEY', 'Get a key at https://aistudio.google.com/apikey'],
+          },
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
     let user = utterance;
     if (context?.previousResult) user = `Previous parse: ${context.previousResult}\n\nUser: ${utterance}`;
     if (context?.history) user = `Context: ${context.history}\n\nUser: ${user}`;

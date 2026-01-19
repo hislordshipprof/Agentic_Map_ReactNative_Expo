@@ -1,3 +1,5 @@
+import { HttpException, HttpStatus } from '@nestjs/common';
+
 const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export async function generateContent(
@@ -18,6 +20,18 @@ export async function generateContent(
   });
   if (!res.ok) {
     const t = await res.text();
+    if (res.status === 429) {
+      throw new HttpException(
+        {
+          error: {
+            code: 'API_QUOTA_EXCEEDED',
+            message: 'Gemini API quota exceeded.',
+            suggestions: ['Retry later', 'Check your quota at https://aistudio.google.com'],
+          },
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     throw new Error(`Gemini API error: ${res.status} ${t}`);
   }
   const json = (await res.json()) as {

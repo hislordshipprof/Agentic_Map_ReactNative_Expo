@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthGuard } from '../../common/guards/auth.guard';
 import { MapsModule } from '../maps/maps.module';
 import { PlacesModule } from '../places/places.module';
 import { ErrandController } from './controllers/errand.controller';
@@ -11,7 +12,7 @@ import { RouteBuilderService } from './services/route-builder.service';
 @Module({
   imports: [MapsModule, PlacesModule],
   controllers: [ErrandController],
-  providers: [DetourBufferService, OptimizationService, EntityResolverService, RouteBuilderService, ErrandService],
+  providers: [AuthGuard, DetourBufferService, OptimizationService, EntityResolverService, RouteBuilderService, ErrandService],
   exports: [DetourBufferService, OptimizationService, EntityResolverService, RouteBuilderService, ErrandService],
 })
 export class ErrandModule {}

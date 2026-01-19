@@ -5,7 +5,9 @@ import { Text, StyleSheet, ScrollView, useWindowDimensions } from 'react-native'
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
-import { RouteMap, RouteDetails, StopList } from '@/components/Route';
+import { RouteMap } from './RouteMap';
+import { RouteDetails } from './RouteDetails';
+import { StopList } from './StopList';
 import { Colors, Spacing, FontFamily, FontSize } from '@/theme';
 import type { Route } from '@/types/route';
 

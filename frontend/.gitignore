@@ -14,6 +14,10 @@ web-build/
 *.key
 *.mobileprovision
 
+# Prebuild-generated; do not commit. Run `expo prebuild` to generate.
+android/
+ios/
+
 # Metro
 .metro-health-check*
 

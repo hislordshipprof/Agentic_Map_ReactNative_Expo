@@ -13,6 +13,7 @@ import {
   ScrollView,
   StatusBar,
   Pressable,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -23,14 +24,14 @@ import { Ionicons } from '@expo/vector-icons';
 // Components
 import { AnimatedMessage } from '@/components/Conversation';
 import type { Message } from '@/components/Conversation';
-import { useRoute, useNLUFlow, useLocation } from '@/hooks';
+import { useRoute, useNLUFlow, useLocation, useVoiceInput } from '@/hooks';
 import {
   GlassCard,
   ThinkingBubble,
 } from '@/components/Common';
 import { UserInputField } from '@/components/Input';
 import { ConfirmationDialog, AlternativesDialog, DEFAULT_ALTERNATIVES } from '@/components/Dialogs';
-import { errandApi } from '@/services/api/errand';
+import { errandApi, checkBackendConnectivity } from '@/services/api';
 import type { Entities } from '@/types/nlu';
 import type { Route } from '@/types/route';
 
@@ -234,6 +235,23 @@ export default function ConversationScreen(): JSX.Element {
       });
   }, [flowState, messages, currentLocation, onNLUResponse, appendSystem]);
 
+  // Once on mount: check if backend is reachable; if not, show how to fix
+  const hasCheckedBackendRef = useRef(false);
+  useEffect(() => {
+    if (hasCheckedBackendRef.current) return;
+    hasCheckedBackendRef.current = true;
+    checkBackendConnectivity().then(({ ok, baseUrl, error }) => {
+      if (ok) return;
+      appendSystem(
+        `Could not reach the backend at ${baseUrl}. ` +
+          'Check: 1) Backend is running (npm run start:dev in backend). ' +
+          '2) On a real device, set EXPO_PUBLIC_API_URL in frontend .env to your PC IP, e.g. http://10.0.0.144:3000/api/v1. ' +
+          '3) Phone and PC on same WiFi. 4) Firewall allows port 3000. ' +
+          (error ? `(${error})` : '')
+      );
+    });
+  }, [appendSystem]);
+
   const handleSend = useCallback(
     async (text: string) => {
       const userMessage: Message = {
@@ -274,8 +292,42 @@ export default function ConversationScreen(): JSX.Element {
     doNavigate(entities, currentLocation);
   }, [confirmCurrentIntent, doNavigate, entities, currentLocation]);
 
-  const handleVoicePress = useCallback(() => setIsRecording(true), []);
-  const handleVoiceRelease = useCallback(() => setIsRecording(false), []);
+  const voiceInput = useVoiceInput({
+    onResult: useCallback(
+      (transcript: string) => {
+        setIsRecording(false);
+        if (transcript.trim().length > 0) handleSend(transcript);
+      },
+      [handleSend]
+    ),
+    onError: useCallback(
+      (error: string) => {
+        setIsRecording(false);
+        appendSystem(error || 'Voice input failed. Try again.');
+      },
+      [appendSystem]
+    ),
+    onPermissionDenied: useCallback(() => {
+      setIsRecording(false);
+      appendSystem('Microphone access is needed for voice input.');
+    }, [appendSystem]),
+  });
+
+  const handleVoicePress = useCallback(async () => {
+    setIsRecording(true);
+    await voiceInput.start();
+  }, [voiceInput]);
+
+  const handleVoiceRelease = useCallback(async () => {
+    await voiceInput.stop();
+  }, [voiceInput]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'background' && isRecording) voiceInput.stop();
+    });
+    return () => sub.remove();
+  }, [isRecording, voiceInput.stop]);
 
   return (
     <View style={styles.container}>

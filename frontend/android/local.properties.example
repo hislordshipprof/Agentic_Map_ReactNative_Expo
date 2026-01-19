@@ -1,4 +1,0 @@
-# Copy to local.properties and add your key. local.properties is gitignored.
-# sdk.dir is usually auto-created; add only GOOGLE_MAPS_API_KEY if you already have local.properties.
-#
-# GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here

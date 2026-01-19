@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { GeminiAdvancedService } from './gemini-advanced.service';
-import type { GeminiFastService } from './gemini-fast.service';
+import { GeminiAdvancedService } from './gemini-advanced.service';
+import { GeminiFastService } from './gemini-fast.service';
 import { ConfidenceRouterService } from './confidence-router.service';
 
 export interface NLUResponse {

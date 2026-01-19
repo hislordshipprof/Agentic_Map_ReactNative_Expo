@@ -5,7 +5,7 @@
  */
 
 // API Client
-export { apiClient, setAuthToken, getAuthToken } from './client';
+export { apiClient, setAuthToken, getAuthToken, checkBackendConnectivity } from './client';
 
 // Query keys for TanStack Query
 export { queryKeys } from './queryKeys';

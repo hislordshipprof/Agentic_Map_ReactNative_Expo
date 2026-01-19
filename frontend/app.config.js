@@ -26,6 +26,10 @@ module.exports = {
           "This app needs access to your location to plan routes and find nearby stops.",
         NSLocationAlwaysAndWhenInUseUsageDescription:
           "This app needs access to your location to provide navigation and route suggestions.",
+        NSMicrophoneUsageDescription:
+          "This app uses the microphone for voice input so you can say your destination and stops.",
+        NSSpeechRecognitionUsageDescription:
+          "This app uses speech recognition to turn your voice into text for planning routes.",
       },
     },
     android: {
@@ -36,12 +40,13 @@ module.exports = {
       package: "com.agenticmap.mobile",
       config: {
         googleMaps: {
-          apiKey: process.env.GOOGLE_MAPS_API_KEY || "",
+          apiKey: "${GOOGLE_MAPS_API_KEY}",
         },
       },
       permissions: [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
+        "RECORD_AUDIO",
       ],
     },
     web: {
@@ -49,7 +54,20 @@ module.exports = {
       output: "static",
       favicon: "./assets/favicon.png",
     },
-    plugins: ["expo-router", "expo-location", "./plugins/withAndroidGradleJdk21", "./plugins/withGoogleMapsApiKeyPlaceholder"],
+    plugins: [
+      "expo-router",
+      "expo-location",
+      "expo-secure-store",
+      [
+        "@react-native-voice/voice",
+        {
+          microphonePermission: "This app uses the microphone for voice input so you can say your destination and stops.",
+          speechRecognitionPermission: "This app uses speech recognition to turn your voice into text for planning routes.",
+        },
+      ],
+      "./plugins/withAndroidGradleJdk21",
+      "./plugins/withGoogleMapsApiKeyPlaceholder",
+    ],
     experiments: {
       typedRoutes: true,
     },

@@ -12,3 +12,6 @@ export * from './auth';
 
 // Cache Services (Offline Support)
 export * from './cache';
+
+// Security Services
+export * from './security';
