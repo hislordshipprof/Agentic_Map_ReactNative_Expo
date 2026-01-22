@@ -67,16 +67,20 @@ export class EntityResolverService {
 
   /**
    * Resolve each stop query to the best place within radius (derived from budget).
+   * When context.destination is provided, PlaceSearch uses route-aware search and ranking
+   * (midpoint, corridor radius, proximity-to-segment, forwardness toward destination).
    */
   async resolveStops(
     queries: string[],
     location: Coordinates,
     budgetM: number,
+    context?: { destination: Coordinates },
   ): Promise<ResolvedStop[]> {
     const radiusM = Math.max(budgetM * 2, 2000);
     const out: ResolvedStop[] = [];
+    const options = context?.destination ? { destination: context.destination } : undefined;
     for (const q of queries) {
-      const list = await this.placeSearch.searchPlaces(q, location, radiusM, 1);
+      const list = await this.placeSearch.searchPlaces(q, location, radiusM, 1, options);
       const top = list[0];
       if (top) out.push({ query: q, place: top });
     }

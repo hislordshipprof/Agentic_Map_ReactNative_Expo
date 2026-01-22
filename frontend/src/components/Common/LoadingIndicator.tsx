@@ -311,14 +311,20 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
 };
 
 /**
- * ThinkingBubble - Chat-style loading indicator
+ * ThinkingBubble - Chat-style loading indicator with optional message
  */
 export const ThinkingBubble: React.FC<{
   style?: ViewStyle;
-}> = ({ style }) => {
+  message?: string;
+}> = ({ style, message }) => {
   return (
     <View style={[styles.thinkingBubble, style]}>
       <TypingIndicator size={6} color={Colors.dark.text.secondary} />
+      {message ? (
+        <Text style={[styles.thinkingBubbleMessage, { color: Colors.dark.text.secondary }]}>
+          {message}
+        </Text>
+      ) : null}
     </View>
   );
 };
@@ -370,6 +376,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.effects.glassDarkBorder,
     alignSelf: 'flex-start',
+  },
+  thinkingBubbleMessage: {
+    marginTop: Spacing.sm,
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.primary,
   },
 });
 

@@ -1,10 +1,11 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { Coordinates } from '../../../common/types';
 import { DetourBufferService } from './detour-buffer.service';
 import { EntityResolverService, type AnchorInput, type ResolvedStop } from './entity-resolver.service';
 import { OptimizationService } from './optimization.service';
 import { RouteBuilderService } from './route-builder.service';
 import { GoogleMapsService } from '../../maps/google-maps.service';
+import type { DetourCategory } from '../../../common/constants/detour.constants';
 
 function haversineM(a: Coordinates, b: Coordinates): number {
   const R = 6371000;
@@ -38,6 +39,7 @@ export class ErrandService {
   async navigateWithStops(inp: NavigateWithStopsIn): Promise<{
     route: ReturnType<RouteBuilderService['build']>;
     excludedStops?: Array<{ name: string; reason: string }>;
+    warnings?: Array<{ stopName: string; message: string; detourMinutes: number; category: DetourCategory }>;
   }> {
     const anchors = inp.anchors ?? [];
     const dest = inp.destination.location
@@ -52,6 +54,7 @@ export class ErrandService {
       inp.stops.map((s) => s.name),
       inp.origin,
       bufferM,
+      { destination: dest.location },
     );
     const excluded: Array<{ name: string; reason: string }> = [];
     inp.stops.forEach((s) => {
@@ -108,18 +111,22 @@ export class ErrandService {
     }
 
     const used = Math.round(totalExtraM);
-    if (used > bufferM) {
-      throw new HttpException(
-        {
-          error: {
-            code: 'ROUTE_EXCEEDS_BUDGET',
-            message: 'The requested stops exceed the detour budget for this route.',
-            suggestions: ['Remove one or more stops', 'Choose a longer direct route to increase the detour budget'],
-          },
-        },
-        HttpStatus.BAD_REQUEST,
-      );
+
+    // Calculate total detour time in minutes
+    const totalDetourMinutes = Math.max(0, fullDir.totalDurationMin - direct.totalDurationMin);
+    const detourCategory = this.detour.getDetourCategory(totalDetourMinutes);
+
+    // Build warnings for SIGNIFICANT or FAR detours (never hard block!)
+    const warnings: Array<{ stopName: string; message: string; detourMinutes: number; category: DetourCategory }> = [];
+    if (detourCategory !== 'MINIMAL') {
+      warnings.push({
+        stopName: 'Total trip',
+        message: this.detour.getWarningMessage(detourCategory, totalDetourMinutes),
+        detourMinutes: totalDetourMinutes,
+        category: detourCategory,
+      });
     }
+
     const route = this.routeBuilder.build({
       origin: { name: 'Origin', location: inp.origin },
       destination: { name: dest.name, location: dest.location },
@@ -128,7 +135,11 @@ export class ErrandService {
       detourBudget: { total: bufferM, used, remaining: Math.max(0, bufferM - used) },
     });
 
-    return { route, excludedStops: excluded.length ? excluded : undefined };
+    return {
+      route,
+      excludedStops: excluded.length ? excluded : undefined,
+      warnings: warnings.length ? warnings : undefined,
+    };
   }
 
   async suggestStopsOnRoute(

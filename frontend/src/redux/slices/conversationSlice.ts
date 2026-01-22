@@ -163,11 +163,8 @@ const conversationSlice = createSlice({
       const { messageId, actionId } = action.payload;
       const message = state.messages.find((m) => m.id === messageId);
       if (message?.actions) {
-        const actionItem = message.actions.find((a) => a.id === actionId);
-        if (actionItem) {
-          // Mark action as handled (could add 'handled' field)
-          console.log(`Action handled: ${actionItem.label}`);
-        }
+        // Mark action as handled - actual handling done by thunks
+        message.actions.find((a) => a.id === actionId);
       }
     },
   },

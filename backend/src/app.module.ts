@@ -7,6 +7,7 @@ import { ErrandModule } from './modules/errand/errand.module';
 import { NluModule } from './modules/nlu/nlu.module';
 import { QueueModule } from './modules/queue/queue.module';
 import { UserModule } from './modules/user/user.module';
+import { VoiceModule } from './modules/voice/voice.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -22,6 +23,7 @@ import { PrismaModule } from './prisma/prisma.module';
     ErrandModule,
     NluModule,
     UserModule,
+    VoiceModule,
   ],
   controllers: [AppController],
 })

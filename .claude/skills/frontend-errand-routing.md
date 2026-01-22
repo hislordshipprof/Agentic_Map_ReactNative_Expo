@@ -2,547 +2,437 @@
 
 ## Project Context
 
-Building an **intelligent errand routing system** frontend that enables natural language route planning in 1-2 conversational turns instead of 5-6 manual steps.
+Building an **intelligent errand routing system** with **parallel input modes** (voice + text) that enables natural language route planning in 1-2 conversational turns.
 
-**Core Transformation**: User says "Take me home with Starbucks and Walmart on the way" -> App shows optimized route with [Accept & Navigate] button
+**Core Experience**: User says OR types "Take me home with Starbucks on the way" → App shows optimized route → User confirms → Navigation starts
 
 ## Tech Stack
 
-- **Framework**: React Native (mobile-first) + React Web
-- **State Management**: Redux
-- **Navigation**: React Navigation (RN) / React Router (Web)
-- **Maps**: Google Maps SDK
-- **Offline Storage**: SQLite (mobile) / IndexedDB (web)
+- **Framework**: React Native (Expo SDK 52+ with Dev Client)
+- **State Management**: Redux Toolkit
+- **Maps**: `react-native-maps` (Google Maps)
+- **Audio**: `expo-av` or `react-native-audio-recorder-player`
+- **Network**: WebSocket (voice) + REST API (text)
+- **Storage**: AsyncStorage + SQLite
 
 ## Project Structure
 
 ```
 frontend/
+├── app/                          # Expo Router screens
+│   ├── (tabs)/
+│   │   ├── index.tsx             # Main conversation screen
+│   │   └── route.tsx             # Route confirmation screen
+│   └── _layout.tsx
 ├── src/
 │   ├── components/
+│   │   ├── Voice/                # NEW: Voice mode components
+│   │   │   ├── VoiceMicButton.tsx
+│   │   │   ├── WaveformVisualizer.tsx
+│   │   │   └── VoiceStatusIndicator.tsx
 │   │   ├── Conversation/
-│   │   │   ├── ConversationBubble.tsx
-│   │   │   ├── SystemResponseBubble.tsx
-│   │   │   ├── ConversationHistory.tsx
-│   │   │   └── ConversationContainer.tsx
 │   │   ├── Input/
-│   │   │   ├── UserInputField.tsx
-│   │   │   └── SendButton.tsx
 │   │   ├── Dialogs/
-│   │   │   ├── ConfirmationDialog.tsx
-│   │   │   ├── DisambiguationDialog.tsx
-│   │   │   ├── AlternativesDialog.tsx
-│   │   │   └── ErrorDialog.tsx
 │   │   ├── Route/
-│   │   │   ├── RouteConfirmationScreen.tsx
-│   │   │   ├── RouteMap.tsx
-│   │   │   ├── RouteDetails.tsx
-│   │   │   └── StopList.tsx
 │   │   ├── Adjustment/
-│   │   │   ├── AdjustmentMode.tsx
-│   │   │   ├── DraggableStopList.tsx
-│   │   │   └── AddStopForm.tsx
 │   │   └── Common/
-│   │       ├── LoadingIndicator.tsx
-│   │       ├── ErrorBoundary.tsx
-│   │       └── OfflineBanner.tsx
 │   ├── redux/
 │   │   ├── slices/
+│   │   │   ├── voiceSlice.ts     # NEW: Voice state management
 │   │   │   ├── conversationSlice.ts
 │   │   │   ├── routeSlice.ts
 │   │   │   ├── nluSlice.ts
-│   │   │   ├── uiSlice.ts
-│   │   │   ├── userSlice.ts
-│   │   │   └── offlineSlice.ts
-│   │   ├── store.ts
-│   │   └── hooks.ts
+│   │   │   └── ...
+│   │   └── store.ts
 │   ├── services/
-│   │   ├── api.ts
-│   │   ├── cache.ts
-│   │   ├── maps.ts
-│   │   └── nlu.ts
+│   │   ├── voice/                # NEW: Voice services
+│   │   │   ├── VoiceClient.ts    # WebSocket client
+│   │   │   ├── AudioRecorder.ts  # Mic capture
+│   │   │   └── AudioPlayer.ts    # TTS playback
+│   │   ├── api/
+│   │   ├── location/
+│   │   └── cache/
 │   ├── hooks/
-│   │   ├── useConversation.ts
+│   │   ├── useVoice.ts           # NEW: Voice hook
+│   │   ├── useLocation.ts
 │   │   ├── useRoute.ts
-│   │   ├── useOfflineSync.ts
 │   │   └── useNLUFlow.ts
-│   ├── screens/
-│   │   ├── ConversationScreen.tsx
-│   │   ├── RouteConfirmationScreen.tsx
-│   │   └── NavigationScreen.tsx
-│   ├── App.tsx
-│   └── index.tsx
+│   └── types/
 └── package.json
 ```
 
+---
+
+## Dual Input Mode Architecture
+
+### Mode Selection
+
+```typescript
+type InputMode = 'voice' | 'text';
+
+// User can switch freely between modes
+// Offline → auto-switch to text mode
+// Context preserved across mode switches
+```
+
+### Voice Mode Flow
+```
+Tap Mic → LISTENING → Speak → Silence (700ms) → PROCESSING → SPEAKING → CONFIRMING → NAVIGATING
+```
+
+### Text Mode Flow
+```
+Type → Submit → PROCESSING → Show Route + Alternatives → CONFIRMING → NAVIGATING
+```
+
+---
+
+## Voice State Machine
+
+```typescript
+type VoiceState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'CONFIRMING' | 'NAVIGATING';
+
+interface VoiceSlice {
+  status: VoiceState;
+  mode: 'voice' | 'text';
+  transcript: string;
+  partialTranscript: string;
+  audioQueue: string[];        // base64 TTS chunks
+  isPlaying: boolean;
+  isConnected: boolean;        // WebSocket status
+  error: { code: string; message: string } | null;
+}
+```
+
+### State Transitions
+
+| From | Event | To |
+|------|-------|-----|
+| IDLE | Tap mic | LISTENING |
+| LISTENING | Silence 700ms | PROCESSING |
+| LISTENING | Tap stop | IDLE |
+| PROCESSING | Route ready | SPEAKING |
+| SPEAKING | Audio done | CONFIRMING |
+| SPEAKING | User interrupts | LISTENING |
+| CONFIRMING | User confirms | NAVIGATING |
+| CONFIRMING | User rejects | LISTENING |
+
+---
+
+## Voice Components
+
+### VoiceMicButton
+
+```typescript
+// States and visual feedback
+IDLE:       Large mic icon, pulsing glow, "Tap to speak"
+LISTENING:  Waveform animation, "Listening..."
+PROCESSING: Spinner, "Thinking..."
+SPEAKING:   Waveform (playback), "Speaking...", stop button
+CONFIRMING: Accept/Cancel buttons visible
+```
+
+### WaveformVisualizer
+
+```typescript
+// Animated bars that respond to audio input/output
+interface Props {
+  isActive: boolean;
+  isPlayback?: boolean;  // true for TTS output
+  audioLevel?: number;   // 0-100
+}
+```
+
+### VoiceStatusIndicator
+
+```typescript
+// Shows current voice state with icon + text
+interface Props {
+  status: VoiceState;
+  transcript?: string;
+}
+```
+
+---
+
+## Voice Services
+
+### VoiceClient (WebSocket)
+
+```typescript
+class VoiceClient {
+  connect(token: string): Promise<void>;
+  disconnect(): void;
+  sendAudioChunk(chunk: string): void;  // base64
+  sendInterrupt(): void;
+  sendConfirm(routeId: string): void;
+  sendLocation(lat: number, lng: number): void;
+
+  // Event handlers
+  onTranscript(callback: (text: string, isFinal: boolean) => void): void;
+  onStatus(callback: (state: VoiceState) => void): void;
+  onAudioOut(callback: (chunk: string) => void): void;
+  onRouteData(callback: (route: RouteResult) => void): void;
+  onError(callback: (error: Error) => void): void;
+}
+```
+
+### AudioRecorder
+
+```typescript
+class AudioRecorder {
+  start(onChunk: (base64: string) => void): Promise<void>;
+  stop(): Promise<void>;
+  isRecording(): boolean;
+}
+
+// Config
+const AUDIO_CONFIG = {
+  sampleRate: 16000,
+  channels: 1,
+  encoding: 'pcm_16bit',
+  chunkIntervalMs: 100,
+};
+```
+
+### AudioPlayer
+
+```typescript
+class AudioPlayer {
+  queueChunk(base64: string): void;
+  play(): Promise<void>;
+  stop(): void;
+  isPlaying(): boolean;
+  onComplete(callback: () => void): void;
+}
+```
+
+---
+
+## Route Display (Both Modes)
+
+### Voice Mode Response
+
+```
+App speaks: "I found a Starbucks on Main Street, just 1 minute
+            out of your way. Total trip is 13 minutes. Ready?"
+
+Map shows:
+- Blue polyline (animated draw)
+- Green pin: current location
+- Orange pin: Starbucks (drops as mentioned)
+- Red pin: home
+
+Buttons: [Yes, let's go] [Change something]
+```
+
+### Text Mode Response
+
+```
+┌─────────────────────────────────────────┐
+│ [Map with route]                        │
+│                                         │
+│ ✓ Route Ready                           │
+│ Home via Starbucks                      │
+│ 4.3 mi • 13 min (+1 min)               │
+│                                         │
+│ Stop: Starbucks Main St ⭐              │
+│       +1 min • Open until 9pm          │
+│       [Change]                          │
+│                                         │
+│ Other options (tap to swap):            │
+│ • Starbucks Oak - +5 min               │
+│ • Starbucks Downtown - +7 min          │
+│ • Starbucks Mall - +9 min              │
+│ • Starbucks Highway - +12 min          │
+│                                         │
+│ [Navigate] [Adjust]                     │
+└─────────────────────────────────────────┘
+```
+
+### Key Difference
+
+| Aspect | Voice Mode | Text Mode |
+|--------|------------|-----------|
+| Best option | Announced | Shown + highlighted |
+| Alternatives | On request ("what else?") | Always visible (5 max) |
+| Swap stops | Say it | Tap [Change] |
+| Confirmation | "Yes" or tap | Tap [Navigate] |
+
+---
+
 ## Redux State Structure
 
-### Conversation Slice
 ```typescript
-interface ConversationState {
-  messages: Message[];
-  isLoading: boolean;
-  error: string | null;
-}
-
-interface Message {
-  id: string;
-  sender: 'user' | 'system';
-  text: string;
-  timestamp: number;
-  messageType?: 'confirmation' | 'disambiguation' | 'alternatives' | 'error';
-  data?: {
-    confirmedDestination?: Destination;
-    confirmedStops?: Stop[];
-    totalDistance?: number;
-    totalTime?: number;
-    route?: Route;
+interface RootState {
+  voice: {
+    status: VoiceState;
+    mode: 'voice' | 'text';
+    transcript: string;
+    partialTranscript: string;
+    audioQueue: string[];
+    isPlaying: boolean;
+    isConnected: boolean;
+    error: Error | null;
   };
-  actions?: Action[];
-}
-```
-
-### Route Slice
-```typescript
-interface RouteState {
-  confirmed: Route | null;
-  pending: Route | null;
-  waypoints: Waypoint[];
-  totalDistance: number;
-  totalTime: number;
-  polyline: string | null;
-  stops: Stop[];
-}
-
-interface Stop {
-  id: string;
-  name: string;
-  location: { lat: number; lng: number };
-  mileMarker: number;
-  detourCost: number;
-  status: 'NO_DETOUR' | 'MINIMAL' | 'ACCEPTABLE' | 'NOT_RECOMMENDED';
-}
-```
-
-### NLU Slice
-```typescript
-interface NLUState {
-  lastIntent: string;
-  lastConfidence: number;
-  currentEntities: {
-    destination: string;
-    stops: string[];
-    radius: number;
+  route: {
+    pending: RouteResult | null;
+    confirmed: RouteResult | null;
+    polyline: string | null;
+    stops: Stop[];
+    alternatives: Map<string, Stop[]>;  // stopId -> alternatives
   };
-  confirmationRequired: boolean;
-}
-```
-
-### UI Slice
-```typescript
-interface UIState {
-  conversationVisible: boolean;
-  mapVisible: boolean;
-  disambiguationOpen: boolean;
-  confirmationOpen: boolean;
-  adjustmentMode: boolean;
-  offlineMode: boolean;
-}
-```
-
-### User Slice
-```typescript
-interface UserState {
-  anchors: Anchor[];
-  preferences: {
-    maxDetourPercentage: number;
-    maxDetourMinutes: number;
-    preferredStopCategories: string[];
+  nlu: {
+    lastIntent: string;
+    lastConfidence: number;
+    entities: Entities;
   };
-  conversationHistory: Message[];
+  ui: {
+    inputMode: 'voice' | 'text';
+    mapVisible: boolean;
+    confirmationOpen: boolean;
+    adjustmentMode: boolean;
+  };
+  user: {
+    anchors: Anchor[];
+    location: { lat: number; lng: number } | null;
+    address: string | null;
+  };
+  offline: {
+    isOnline: boolean;
+    lastSyncTime: number;
+  };
 }
 ```
 
-### Offline Slice
-```typescript
-interface OfflineState {
-  isOnline: boolean;
-  lastSyncTime: number;
-  cacheStale: boolean;
-  isSyncing: boolean;
-}
-```
+---
 
-## Confidence-Based UI Flows
+## Confidence-Based Flows
 
-### Three-Tier System
+### Three-Tier System (Both Modes)
 
 ```typescript
 const CONFIDENCE_THRESHOLDS = {
   HIGH: 0.80,    // Execute immediately
   MEDIUM: 0.60,  // Show confirmation
-  LOW: 0.00      // Offer alternatives
+  LOW: 0.00      // Offer alternatives / escalate
 };
 ```
 
-### Flow 1: HIGH Confidence (>= 0.80)
-```
-User input -> NLU returns 0.87 confidence
-    -> System processes immediately
-    -> No confirmation needed
-    -> Show route results with [Accept & Navigate] button
-    -> User taps Accept
-    -> Start navigation
-```
+### HIGH Confidence (≥0.80)
 
-### Flow 2: MEDIUM Confidence (0.60-0.79)
-```
-User input -> NLU returns 0.72 confidence
-    -> Show confirmation dialog:
-       "I think you want to:
-        Go to: Home
-        With stops at: Starbucks, Whole Foods
-        Is this right?"
-    -> User taps [Yes] or [Let me rephrase]
-    -> If Yes: Proceed to results
-    -> If Rephrase: Clear input, re-prompt
-```
+**Voice**: Proceed to route calculation, speak result
+**Text**: Show route result directly
 
-### Flow 3: LOW Confidence (< 0.60)
-```
-User input -> NLU returns 0.48 confidence
-    -> Show alternatives:
-       "I'm not quite sure. Did you want to:
-        (A) Plan a multi-stop trip?
-        (B) Find a specific place?
-        (C) Set a destination?"
-    -> User taps option
-    -> If still unclear after 2 attempts: Escalate to Claude LLM
-```
+### MEDIUM Confidence (0.60-0.79)
 
-### Flow 4: LLM Escalation
-```
-2 failed attempts at low confidence
-    -> Show loading: "Thinking about your request..."
-    -> Backend calls Claude
-    -> Claude returns parsed intent (0.95+ confidence)
-    -> Proceed with high confidence flow
-```
+**Voice**: "I think you want to go home with Starbucks. Is that right?"
+**Text**: Show confirmation dialog with parsed intent
 
-## Key Components
+### LOW Confidence (<0.60)
 
-### ConversationBubble
-- User messages: Right-aligned, user color
-- System messages: Left-aligned, app color
-- Timestamps optional
-- Auto-scroll to latest message
+**Voice**: "I'm not sure what you meant. Did you want to plan a route, find a place, or something else?"
+**Text**: Show alternatives dialog with options
 
-### Message Types
+---
 
-**Type 1: Simple Confirmation**
-```
-Perfect! Both stops fit on your way.
-Route: Home -> Starbucks (mi 2) -> Whole Foods (mi 7) -> Home
-Total: 10.2 miles, 18 minutes.
+## Error Handling
 
-[Accept & Navigate] [Adjust] [Cancel]
-```
+### Voice Errors
 
-**Type 2: Disambiguation**
-```
-I found multiple options. Which Target are you going to?
-
-- Target Superstore, Aurora
-  3.2 miles away - Open now - 4.8 stars
-
-- Target Superstore, Downtown Denver
-  7.1 miles away - Open until 9pm - 4.6 stars
-
-[Select Aurora] [Select Downtown]
-```
-
-**Type 3: Alternatives (Low Confidence)**
-```
-I'm not quite sure what you meant. Did you want to:
-
-(A) Plan a multi-stop trip?
-(B) Find a specific place?
-(C) Just set where you're going?
-
-[A] [B] [C]
-```
-
-**Type 4: Error/Fallback**
-```
-I couldn't find Chick-fil-A within your 10-mile budget.
-
-Would you like me to:
-- Expand search to 15 miles?
-- Show options outside your route?
-- Skip this stop?
-
-[Expand] [Show All] [Skip]
-```
-
-### RouteConfirmationScreen
-Layout:
-```
-[Header]
-Route Summary: Home -> Starbucks (mi 2) -> Whole Foods (mi 7) -> Home
-
-[Map Section - 50% of screen]
-Visual polyline with numbered waypoints
-Green pin: Start
-Blue numbered pins: Stops (1, 2, 3...)
-Red pin: End
-
-[Details Section - 50% of screen]
-Total Distance: 10.2 miles
-Total Time: 18 minutes
-Stops: 2
-Status: All within budget
-
-[Stop Breakdown]
-1. Starbucks Midtown (mile 2)
-   - No extra miles
-   - 123 Main St, Aurora
-
-2. Whole Foods Market (mile 7)
-   - Minimal detour (+0.2 miles)
-   - 456 South St, Denver
-
-[Buttons]
-[Accept & Navigate] [Adjust] [Cancel]
-```
-
-### AdjustmentMode
-Features:
-- Remove stops: [Remove] button per stop
-- Reorder stops: Drag-and-drop or arrow buttons
-- Replace stops: [Replace] with search
-- Add stops: [+ Add Another Stop]
-- Re-optimize: Recalculate after changes
-- Preview: See new route before confirming
-
-## Map Integration
-
-### Google Maps SDK Requirements
-- Show polyline (blue) of optimized route
-- Numbered waypoint pins
-- Auto-zoom to fit all waypoints
-- Distance/time labels on each leg
-- Tap waypoint for info window
-- Pinch to zoom, pan gestures
-
-### Configuration
 ```typescript
-const mapOptions = {
-  zoom: 'auto-fit-bounds',
-  center: 'midpoint-of-waypoints',
-  style: 'light-theme',
-  traffic: 'optional-toggle',
-  satellite: 'optional-toggle'
-};
+// WebSocket disconnect
+"Connection lost. Switching to text mode."
+→ Auto-switch to text input
+
+// STT failure
+"I couldn't hear that clearly. Please try again."
+→ Return to LISTENING
+
+// No results
+"I couldn't find any [stop] near your route. Skip it or search wider?"
+→ Offer options via voice
 ```
+
+### Text Errors
+
+```
+┌─────────────────────────────────────┐
+│ ⚠️ No results found                 │
+│                                     │
+│ Couldn't find Chick-fil-A nearby.   │
+│                                     │
+│ [Expand Search] [Skip] [Try Again]  │
+└─────────────────────────────────────┘
+```
+
+---
 
 ## Offline Support
 
-### Cache Strategy (SQLite/IndexedDB)
-
-| Data Type | TTL | Limit |
-|-----------|-----|-------|
-| Anchors | 30 days | All user anchors |
-| Popular stops | 7 days | Top 20 per anchor |
-| Previous routes | 1 day | Last 10 routes |
-| Destination index | 14 days | Common places |
-| Conversation | No expiry | Last 50 messages |
-
-### Offline UI
-```
-[Network indicator: Offline Mode]
-
-Quick Actions:
-[Home] [Work] [Gym]
-
-[Recently Used Routes]
-Home (with: Starbucks, Whole Foods)
-Work (with: Gas, Coffee)
-
-[New Route]
-[Type or select from history...]
-
-Note: Some suggestions may be outdated.
-Refresh when online for latest options.
-```
-
-### Sync Strategy
-```
-Device comes online
-    -> Check if cache is stale (>7 days)
-    -> If stale: Download fresh data
-        - User anchors
-        - Popular stops near anchors
-        - Recent routes
-    -> Store in local cache
-    -> Update UI: "Synced. Suggestions refreshed."
-```
-
-## Error Handling UI
-
-### Error Type 1: Network Error
-```
-Connection failed
-
-I couldn't reach the server. Please check your internet and try again.
-
-[Retry] [Use Offline Mode]
-```
-
-### Error Type 2: No Results
-```
-No results found
-
-I couldn't find any Chick-fil-A within your 10-mile budget.
-
-Would you like to:
-- Expand search to 15 miles?
-- Show options further out?
-- Skip this stop?
-
-[Expand] [Show All] [Skip]
-```
-
-### Error Type 3: Route Too Long
-```
-Route too long
-
-With all stops, the route is 15.2 miles.
-Your budget is 10 miles (with 7% detour allowed).
-
-Would you like to:
-- Remove one of the stops?
-- Expand your budget?
-- Choose different stops?
-
-[Adjust] [Expand] [Change Stops]
-```
-
-### Error Type 4: Location Unavailable
-```
-Location not available
-
-I need your location to plan routes. Please enable location services in settings.
-
-[Open Settings] [Try Without Location]
-```
-
-## Loading States
+### Detection
 
 ```typescript
-// Loading indicator types
-type LoadingState = {
-  isActive: boolean;
-  message: string;
-  progress?: number;  // 0-100
-  canCancel?: boolean;
-};
-
-// Messages
-const loadingMessages = [
-  "Searching for Starbucks...",
-  "Finding best match for your stops...",
-  "Optimizing route order...",
-  "Checking if stops fit in your budget...",
-  "Recalculating with your changes..."
-];
+// NetInfo listener
+if (!isConnected) {
+  dispatch(setInputMode('text'));  // Force text mode
+  dispatch(showOfflineBanner());
+}
 ```
 
-## Accessibility Requirements
+### Cached Data
 
-- Screen reader support (ARIA labels on all interactive elements)
-- High contrast mode support
-- Large text option (1.2x, 1.5x, 2x scale)
-- Keyboard navigation (Tab, Enter, Escape)
-- Voice announcements for state changes
-- Touch targets: Minimum 48x48dp
-- Color not the only indicator (use icons + text)
+- User anchors (home, work)
+- Recent routes (last 10)
+- Popular stops near anchors
+
+### Offline UI
+
+```
+[Offline Mode Banner]
+
+Quick destinations:
+[Home] [Work] [Gym]
+
+Recent routes:
+• Home with Starbucks (yesterday)
+• Work with gas (2 days ago)
+
+[Type destination...]
+```
+
+---
 
 ## Performance Targets
 
 | Metric | Target |
 |--------|--------|
-| Initial app load | < 3 seconds |
-| Message send + response | < 2 seconds |
-| Map render | < 1 second |
-| Scroll conversation | 60 FPS |
+| Voice latency (tap → listening) | < 200ms |
+| Transcript display | Real-time |
+| Route display after TTS | < 100ms |
+| Mode switch | < 200ms |
+| Map render | < 500ms |
 
-### Optimization Strategies
-- Lazy load conversation messages
-- Virtualize long lists (FlatList)
-- Memoize expensive computations
-- Debounce user input
-- Pre-render common dialogs
-- Compress place photos
-- Code splitting for route/map components
-
-## API Integration
-
-### Endpoints
-- `POST /api/v1/errand/navigate-with-stops` - Main route planning
-- `GET /api/v1/errand/suggest-stops-on-route` - Proactive suggestions
-- `GET /api/v1/places/disambiguate` - Handle ambiguous destinations
-- `GET /api/v1/user/anchors` - Fetch saved locations
-- `POST /api/escalate-to-llm` - LLM fallback
-
-### Request/Response Pattern
-```typescript
-// Send request
-const response = await api.post('/api/v1/errand/navigate-with-stops', {
-  start_location: currentLocation,
-  destination_text: 'home',
-  stop_queries: ['Starbucks', 'Whole Foods'],
-  max_detour_m: 804,
-  optimize: true,
-  user_id: userId
-});
-
-// Handle response
-if (response.ready_to_navigate) {
-  dispatch(setRoute(response.optimized_route));
-  dispatch(showConfirmation(response.confirmation_message));
-} else if (response.action === 'DISAMBIGUATE') {
-  dispatch(showDisambiguation(response.candidates));
-}
-```
+---
 
 ## Development Guidelines
 
-### When implementing a component:
-1. Create functional component with TypeScript
-2. Use Redux hooks (useSelector, useDispatch)
-3. Implement proper loading and error states
-4. Add accessibility attributes
-5. Write unit tests with React Testing Library
-6. Ensure responsive design (mobile-first)
+### When implementing voice components:
+1. Handle all 6 voice states
+2. Ensure proper cleanup of audio resources
+3. Test interrupt scenarios
+4. Handle WebSocket reconnection
+5. Provide visual feedback for every state
 
-### When implementing a screen:
-1. Connect to Redux state
-2. Handle all confidence-based flows
-3. Implement offline fallback
-4. Add proper navigation guards
-5. Test on both iOS and Android
+### When implementing route display:
+1. Support both voice and text modes
+2. Show alternatives in text mode (5 max)
+3. Animate map elements in voice mode
+4. Handle detour warnings appropriately
 
 ### Testing Requirements
-- Unit tests: All components
-- Integration tests: Full user flows
-- E2E tests: Complete journeys (Detox/Appium)
-- Target: Comprehensive coverage of confidence flows
-
-## Message Formatting Guidelines
-
-- Use emojis for quick scanning: check, X, warning
-- Bold important numbers (distance, time)
-- Bullet points for lists
-- Distinct styling for action buttons
-- Clickable links
-- Different font for entity names if needed
+- Unit tests: All components and hooks
+- Integration: Voice flow end-to-end
+- E2E: Full user journeys (Detox)
+- Test offline fallback
+- Test interrupt handling

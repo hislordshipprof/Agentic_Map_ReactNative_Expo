@@ -27,7 +27,8 @@ export default function ReadyScreen() {
     } catch {
       // ignore
     }
-    router.replace('/(tabs)');
+    // Redirect to auth flow after onboarding
+    router.replace('/auth/welcome');
   };
 
   const handleSkip = async () => {
@@ -36,7 +37,8 @@ export default function ReadyScreen() {
     } catch {
       // ignore
     }
-    router.replace('/(tabs)');
+    // Skip also goes to auth, user can skip auth there too
+    router.replace('/auth/welcome');
   };
 
   return (

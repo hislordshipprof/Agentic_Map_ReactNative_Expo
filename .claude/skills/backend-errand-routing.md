@@ -2,292 +2,592 @@
 
 ## Project Context
 
-Building an **intelligent errand routing system** backend that processes natural language requests, optimizes multi-stop routes, and delivers results in 1-2 conversational turns instead of 5-6 manual steps.
+Building an **intelligent errand routing system** backend with **dual input support** (voice streaming + REST API) that processes natural language requests and returns optimized multi-stop routes.
 
-**Core Transformation**: "Take me home with Starbucks and Walmart on the way" -> Optimized route with waypoints
+**Core Flow**: Voice/Text input → NLU → Route Planning (best-first algorithm) → Response
 
 ## Tech Stack
 
 - **Framework**: NestJS with TypeScript
-- **Database**: PostgreSQL (main) + Redis (caching)
-- **Queue**: Bull (async job processing)
-- **External APIs**: Google Maps, Google Places, Gemini API (2.5 Pro + 3.0 Pro)
-- **Deployment**: Docker + Kubernetes
-
-## Gemini Dual-Agent Architecture
-
-- **Gemini 2.5 Pro (Fast Agent)**: First-pass NLU, intent classification, entity extraction (~85% of requests)
-- **Gemini 3.0 Pro (Advanced Agent)**: Complex disambiguation, multi-turn reasoning (~15% of requests)
-- **Pipeline Strategy**: 2.5 Pro processes all requests first; escalates to 3.0 Pro when confidence < 0.60 or complexity detected
+- **Real-Time**: `@nestjs/websockets` + `socket.io` (voice streaming)
+- **AI/NLU**: Gemini 2.5 Flash + Gemini 3.0 Pro
+- **Voice**: Google Cloud Speech-to-Text + Text-to-Speech
+- **Maps**: Google Maps Routes API + Places API
+- **Database**: PostgreSQL + Prisma
+- **Cache**: Redis
+- **Queue**: Bull (async jobs)
 
 ## Project Structure
 
 ```
 backend/
 ├── src/
-│   ├── common/
-│   │   ├── constants/
-│   │   │   └── detour.constants.ts
-│   │   ├── decorators/
-│   │   ├── filters/
-│   │   │   └── exception.filter.ts
-│   │   └── types/
-│   │       └── index.ts
 │   ├── modules/
-│   │   ├── errand/          # Main route planning logic
-│   │   ├── gemini/          # Dual-agent NLU (2.5 Pro + 3.0 Pro)
-│   │   ├── places/          # Place search & disambiguation
-│   │   ├── user/            # User profiles & anchors
-│   │   ├── maps/            # Google Maps integration
-│   │   └── cache/           # Redis caching
+│   │   ├── voice/                # NEW: Voice streaming
+│   │   │   ├── voice.module.ts
+│   │   │   ├── voice.gateway.ts  # WebSocket handler
+│   │   │   ├── audio.service.ts  # Pipeline orchestration
+│   │   │   ├── vad.service.ts    # Voice Activity Detection
+│   │   │   ├── stt.service.ts    # Google STT wrapper
+│   │   │   └── tts.service.ts    # Google TTS wrapper
+│   │   ├── errand/               # Route planning (UPDATED)
+│   │   │   ├── errand.service.ts
+│   │   │   ├── route-builder.service.ts
+│   │   │   └── services/
+│   │   │       ├── detour-buffer.service.ts
+│   │   │       ├── optimization.service.ts
+│   │   │       └── entity-resolver.service.ts
+│   │   ├── nlu/                  # NLU processing
+│   │   │   ├── gemini-fast.service.ts
+│   │   │   ├── gemini-advanced.service.ts
+│   │   │   └── confidence-router.service.ts
+│   │   ├── places/               # Place search
+│   │   ├── maps/                 # Google Maps
+│   │   ├── user/                 # User & anchors
+│   │   └── cache/                # Redis caching
 │   ├── config/
+│   ├── common/
 │   ├── app.module.ts
 │   └── main.ts
-├── test/
-├── docker-compose.yml
 └── package.json
 ```
 
-## Core Services
+---
 
-### 1. DetourBufferService
-Calculates dynamic detour budget based on route distance.
+## Voice Gateway (NEW)
+
+### WebSocket Protocol
+
+**Namespace**: `/voice`
+**Connection**: `wss://api.domain.com/voice`
+
+### Client → Server Messages
 
 ```typescript
-// Key logic
-const DETOUR_CONFIG = {
-  short: { maxDistanceM: 3219, percentage: 0.10 },   // <= 2 miles: 10%
-  medium: { maxDistanceM: 16093, percentage: 0.07 }, // <= 10 miles: 7%
-  long: { percentage: 0.05 }                          // > 10 miles: 5%
-};
+// Authentication
+{ type: 'auth', token: string }
 
-const ABSOLUTE_BOUNDS = {
-  minBufferM: 400,   // 0.25 miles minimum
-  maxBufferM: 1600   // 1 mile maximum
-};
+// Audio input (base64 PCM, 100ms chunks)
+{ type: 'audio_input', payload: string }
 
-// Detour status enum
-enum DetourStatus {
-  NO_DETOUR = 'NO_DETOUR',           // 0-50m extra
-  MINIMAL = 'MINIMAL',                // <= 25% of buffer
-  ACCEPTABLE = 'ACCEPTABLE',          // 26-75% of buffer
-  NOT_RECOMMENDED = 'NOT_RECOMMENDED' // > 75% of buffer
+// User interrupts TTS
+{ type: 'interrupt' }
+
+// User confirms route
+{ type: 'confirm', routeId: string }
+
+// User's location update
+{ type: 'location', lat: number, lng: number }
+```
+
+### Server → Client Messages
+
+```typescript
+// Connection established
+{ type: 'ready', status: 'CONNECTED' }
+
+// Live transcript (partial and final)
+{ type: 'transcript', text: string, isFinal: boolean }
+
+// State change notification
+{ type: 'status', state: 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'CONFIRMING' }
+
+// TTS audio chunk (base64)
+{ type: 'audio_out', payload: string }
+
+// Route data (JSON)
+{ type: 'route_data', payload: RouteResult }
+
+// Need clarification
+{ type: 'clarification', message: string, alternatives?: Alternative[] }
+
+// Error
+{ type: 'error', code: string, message: string }
+```
+
+### Voice Gateway Implementation
+
+```typescript
+@WebSocketGateway({ namespace: '/voice', cors: { origin: '*' } })
+export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  @WebSocketServer() server: Server;
+
+  @SubscribeMessage('auth')
+  handleAuth(client: Socket, payload: { token: string }) { ... }
+
+  @SubscribeMessage('audio_input')
+  handleAudioInput(client: Socket, payload: { payload: string }) { ... }
+
+  @SubscribeMessage('interrupt')
+  handleInterrupt(client: Socket) { ... }
+
+  @SubscribeMessage('confirm')
+  handleConfirm(client: Socket, payload: { routeId: string }) { ... }
 }
 ```
 
-**Methods**:
-- `calculateBuffer(distanceM: number): number`
-- `getDetourStatus(extraDistanceM: number, bufferM: number): DetourStatus`
-- `isWithinBudget(extraDistanceM: number, budgetM: number): boolean`
+---
 
-### 2. PlaceSearchService
-Finds and ranks place candidates by relevance.
+## Audio Pipeline Service
 
-```typescript
-// Ranking formula
-score = (1 - distance_ratio * 0.5) + (rating / 5 * 0.3) + (popularity / 100 * 0.2)
+### Flow
 
-// Ranking criteria
-interface RankingCriteria {
-  proximityToRoute: number;  // Distance to polyline
-  rating: number;            // Google rating 1-5
-  popularity: number;        // Review count
-  openNow: boolean;          // Operating hours
-}
+```
+Audio Chunks → VAD → STT → NLU → Route Planning → TTS → Stream Back
 ```
 
-**Methods**:
-- `searchPlaces(query: string, location: Coordinates, radiusM: number): Promise<PlaceCandidate[]>`
-- `rankCandidates(candidates: Place[], criteria: RankingCriteria): Place[]`
-- `calculateRelevanceScore(place: Place, query: string, route?: RoutePolyline): number`
-- `getPlaceDetails(googlePlacesId: string): Promise<PlaceDetails>`
-
-### 3. OptimizationService (TSP Solver)
-Optimizes stop ordering to minimize total distance.
-
-**Algorithms**:
-1. **Nearest Neighbor** (Phase 1): O(n^2), good for 2-4 stops
-2. **2-opt Optimization**: Iterative improvement
-3. **Google OR-Tools** (Production): Best for 10+ stops
-
-**Methods**:
-- `optimizeStopOrder(startLoc: Coordinates, endLoc: Coordinates, stops: Stop[]): OptimizationResult`
-- `nearestNeighbor(locations: Coordinates[]): number[]`
-- `calculateTotalDistance(locations: Coordinates[]): number`
-
-### 4. ConfidenceRouterService
-Routes requests based on NLU confidence level.
+### VAD (Voice Activity Detection)
 
 ```typescript
-// Three-tier system
-const CONFIDENCE_THRESHOLDS = {
-  HIGH: 0.80,    // Execute immediately
-  MEDIUM: 0.60,  // Show confirmation dialog
-  LOW: 0.00      // Offer alternatives
+// Detect when user stops speaking
+const VAD_CONFIG = {
+  silenceThresholdMs: 700,    // Commit after 700ms silence
+  minSpeechMs: 200,           // Ignore very short sounds
 };
 
-// Response types
-type RoutingAction = 'EXECUTE' | 'CONFIRM' | 'CLARIFY' | 'ESCALATE_TO_LLM';
-```
-
-**Methods**:
-- `routeByConfidence(nluResult: NLUResult): RoutingDecision`
-- `shouldAskConfirmation(confidence: number): boolean`
-- `shouldOfferAlternatives(confidence: number): boolean`
-- `shouldEscalateToLLM(confidence: number, retryCount: number): boolean`
-
-### 5. EntityResolverService
-Converts natural language entities to concrete data.
-
-**Resolution flow**:
-1. Check saved anchors ("home" -> user's Home anchor)
-2. Search places API (if not anchor)
-3. Geocode address (if coordinates needed)
-
-**Methods**:
-- `resolveDestination(text: string, userId: string): Promise<ResolvedDestination>`
-- `resolveStops(queries: string[], location: Coordinates, budget: number): Promise<ResolvedStop[]>`
-- `matchAnchor(text: string, anchors: Anchor[]): Anchor | null`
-
-### 6. ClaudeService (LLM Fallback)
-Handles low-confidence NLU parsing.
-
-```typescript
-// Prompt structure
-const systemPrompt = `You are a travel assistant NLU parser. Parse the user's request and extract:
-  - destination (required): Where are they going?
-  - stops (optional): What stops do they want?
-  - radius_preference (optional): Distance preference?
-
-Return JSON: { destination: string, stops: string[], radius_miles: number }`;
-```
-
-## API Endpoints
-
-### Main Endpoint: POST /api/v1/errand/navigate-with-stops
-```typescript
-// Request
-interface NavigateWithStopsRequest {
-  start_location: { lat: number; lng: number };
-  destination_text: string;
-  stop_queries: string[];
-  max_detour_m?: number;
-  optimize: boolean;
-  user_id: string;
+// VAD returns
+interface VADResult {
+  isSpeech: boolean;
+  silenceDurationMs: number;
 }
+```
 
-// Response
-interface NavigateWithStopsResponse {
-  matched_stops: MatchedStop[];
-  optimized_route: {
-    sequence: string[];
-    total_distance_m: number;
-    total_time_min: number;
-    stops_count: number;
-    polyline: string;
-    legs: RouteLeg[];
+### STT (Speech-to-Text)
+
+```typescript
+// Google Cloud Speech-to-Text streaming
+const sttConfig = {
+  encoding: 'LINEAR16',
+  sampleRateHertz: 16000,
+  languageCode: 'en-US',
+  enableAutomaticPunctuation: true,
+  model: 'latest_short',
+};
+
+// Returns partial and final transcripts
+interface STTResult {
+  transcript: string;
+  isFinal: boolean;
+  confidence: number;
+}
+```
+
+### TTS (Text-to-Speech)
+
+```typescript
+// Google Cloud TTS streaming
+const ttsConfig = {
+  languageCode: 'en-US',
+  name: 'en-US-Neural2-J',  // Natural voice
+  speakingRate: 1.1,         // Slightly faster
+};
+
+// Stream audio chunks back to client
+async *generateSpeech(text: string): AsyncGenerator<Buffer> { ... }
+```
+
+---
+
+## Route Planning Algorithm (UPDATED)
+
+### Core Principles
+
+1. **Never hard block** - Always return a route
+2. **Best/shortest first** - Category winner = lowest detour
+3. **Inform, don't decide** - Warn if far, let user choose
+4. **Voice vs Text** - Voice gets 1 option, text gets 5
+
+### Algorithm Flow
+
+```typescript
+async planRoute(params: {
+  origin: Coordinates;
+  destination: string;
+  stops: string[];
+  userId: string;
+  mode: 'voice' | 'text';
+}): Promise<RouteResult> {
+
+  // STEP 1: Calculate direct route
+  const directRoute = await this.mapsService.getRoute(
+    params.origin,
+    await this.resolveDestination(params.destination, params.userId)
+  );
+
+  // STEP 2: For each stop, find CATEGORY WINNER
+  const resolvedStops = await Promise.all(
+    params.stops.map(stop => this.findCategoryWinner(stop, directRoute))
+  );
+
+  // STEP 3: Optimize stop order
+  const optimizedOrder = this.optimizeStopOrder(
+    params.origin,
+    directRoute.destination,
+    resolvedStops.map(s => s.winner)
+  );
+
+  // STEP 4: Calculate final route with stops
+  const finalRoute = await this.mapsService.getRouteWithWaypoints(
+    params.origin,
+    directRoute.destination,
+    optimizedOrder
+  );
+
+  // STEP 5: Categorize total detour
+  const detourTime = finalRoute.duration - directRoute.duration;
+  const detourCategory = this.categorizeDetour(detourTime);
+
+  // STEP 6: Build response based on mode
+  return {
+    route: {
+      polyline: finalRoute.polyline,
+      totalDistance: finalRoute.distance,
+      totalTime: finalRoute.duration,
+      detourTime,
+      detourCategory,
+    },
+    stops: resolvedStops.map(s => ({
+      ...s.winner,
+      isSelected: true,
+      // Include alternatives only for text mode
+      alternatives: params.mode === 'text' ? s.alternatives.slice(0, 5) : [],
+    })),
+    warnings: detourCategory !== 'MINIMAL' ? [{
+      stopName: 'Total trip',
+      message: this.getWarningMessage(detourCategory, detourTime),
+      detourTime,
+    }] : [],
   };
-  ready_to_navigate: boolean;
-  confirmation_message: string;
 }
 ```
 
-### Suggestions: GET /api/v1/errand/suggest-stops-on-route
-### Disambiguation: GET /api/v1/places/disambiguate
-### User Anchors: GET /api/v1/user/anchors
-### LLM Escalation: POST /api/escalate-to-llm
+### Find Category Winner
+
+```typescript
+async findCategoryWinner(
+  stopQuery: string,
+  directRoute: Route
+): Promise<{ winner: Stop; alternatives: Stop[] }> {
+
+  // Search within 5 miles of route
+  const candidates = await this.placesService.searchAlongRoute(
+    stopQuery,
+    directRoute.polyline,
+    5 * 1609  // 5 miles in meters
+  );
+
+  // Calculate detour for each candidate
+  const withDetour = await Promise.all(
+    candidates.map(async (place) => {
+      const detour = await this.calculateDetour(
+        directRoute,
+        place.location
+      );
+      return { ...place, detourTime: detour.extraTime };
+    })
+  );
+
+  // Sort by detour (lowest first)
+  const sorted = withDetour.sort((a, b) => a.detourTime - b.detourTime);
+
+  return {
+    winner: sorted[0],              // Category winner
+    alternatives: sorted.slice(1),  // Rest for text mode
+  };
+}
+```
+
+### Detour Categories
+
+```typescript
+categorizeDetour(detourSeconds: number): DetourCategory {
+  const minutes = detourSeconds / 60;
+
+  if (minutes <= 5) return 'MINIMAL';
+  if (minutes <= 10) return 'SIGNIFICANT';
+  return 'FAR';
+}
+
+getWarningMessage(category: DetourCategory, seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+
+  switch (category) {
+    case 'SIGNIFICANT':
+      return `This adds about ${minutes} minutes to your trip.`;
+    case 'FAR':
+      return `This is ${minutes} minutes out of your way. Are you sure?`;
+    default:
+      return '';
+  }
+}
+```
+
+### Response by Mode
+
+| Mode | Category Winner | Alternatives | Behavior |
+|------|-----------------|--------------|----------|
+| Voice | Announced | On request | Speak result, ask confirm |
+| Text | Shown + highlighted | Show 5 | Display all options |
+
+---
+
+## NLU Processing
+
+### Gemini Dual-Agent Architecture
+
+```typescript
+// Fast Agent (85% of requests)
+// Gemini 2.5 Flash - quick intent/entity extraction
+const fastResult = await this.geminiFast.process(transcript);
+
+if (fastResult.confidence >= 0.60) {
+  return fastResult;  // Proceed with this
+}
+
+// Advanced Agent (15% of requests)
+// Gemini 3.0 Pro - complex reasoning
+return await this.geminiAdvanced.process(transcript, context);
+```
+
+### NLU Response
+
+```typescript
+interface NLUResult {
+  intent: 'navigate_with_stops' | 'find_place' | 'set_destination' | 'unclear';
+  entities: {
+    destination: string | null;
+    stops: string[];
+    category?: string;
+  };
+  confidence: number;
+}
+```
+
+### Confidence Routing
+
+| Confidence | Action |
+|------------|--------|
+| ≥ 0.80 (HIGH) | Execute immediately |
+| 0.60-0.79 (MEDIUM) | Ask confirmation |
+| < 0.60 (LOW) | Escalate to Gemini 3.0 Pro |
+
+---
+
+## REST API Endpoints (Text Mode)
+
+### Main Route Planning
+
+```typescript
+POST /api/v1/errand/navigate-with-stops
+
+Request:
+{
+  origin: { lat: number; lng: number };
+  destination: { name: string } | { lat: number; lng: number };
+  stops: Array<{ name: string; category?: string }>;
+  userId?: string;
+}
+
+Response:
+{
+  success: boolean;
+  data: {
+    route: RouteResult;
+    excludedStops?: Array<{ name: string; reason: string }>;
+  };
+  error?: { code: string; message: string };
+}
+```
+
+### Other Endpoints
+
+- `POST /api/v1/nlu/process` - NLU processing
+- `POST /api/v1/nlu/escalate` - Escalate to Gemini 3.0 Pro
+- `GET /api/v1/places/search` - Place search
+- `GET /api/v1/places/disambiguate` - Handle ambiguous places
+- `GET /api/v1/user/anchors` - User's saved locations
+
+---
+
+## Data Structures
+
+### RouteResult
+
+```typescript
+interface RouteResult {
+  route: {
+    polyline: string;
+    totalDistance: number;      // meters
+    totalTime: number;          // seconds
+    detourTime: number;         // extra seconds vs direct
+    detourCategory: 'MINIMAL' | 'SIGNIFICANT' | 'FAR';
+  };
+  stops: Array<{
+    id: string;
+    name: string;
+    category: string;
+    location: { lat: number; lng: number };
+    address: string;
+    detourTime: number;
+    isSelected: boolean;
+    alternatives: Array<{       // Only in text mode
+      id: string;
+      name: string;
+      detourTime: number;
+      address: string;
+    }>;
+  }>;
+  warnings: Array<{
+    stopName: string;
+    message: string;
+    detourTime: number;
+  }>;
+  voiceMessage?: string;        // Pre-generated TTS text
+}
+```
+
+---
 
 ## Database Schema
 
 ### Tables
-- **users**: id, email, phone, preferences (JSON), timestamps
-- **anchors**: id, user_id, name, location (PostGIS), type, timestamps
-- **places**: id, google_places_id, name, address, location, rating, opening_hours (JSON), cached_at, expires_at
-- **routes**: id, user_id, start/end_location, stops (JSON), total_distance_m, total_time_min
-- **conversation_history**: id, user_id, turn, user_message, intent, intent_confidence, entities (JSON), system_response
 
-### Key Indexes
-- users.email (unique)
-- anchors.location (spatial - PostGIS)
-- places.google_places_id (unique)
-- places.location (spatial)
-- places.expires_at (for cleanup)
+```sql
+-- Users
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  email VARCHAR UNIQUE,
+  phone VARCHAR,
+  preferences JSONB,
+  created_at TIMESTAMP
+);
+
+-- Anchors (saved locations)
+CREATE TABLE anchors (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  name VARCHAR,           -- "home", "work", etc.
+  location GEOGRAPHY,
+  address VARCHAR,
+  type VARCHAR,
+  created_at TIMESTAMP
+);
+
+-- Conversation history
+CREATE TABLE conversations (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  transcript TEXT,
+  intent VARCHAR,
+  confidence FLOAT,
+  route_id UUID,
+  mode VARCHAR,           -- 'voice' or 'text'
+  created_at TIMESTAMP
+);
+```
+
+---
 
 ## Caching Strategy (Redis)
 
-| Data Type | TTL | Key Pattern |
-|-----------|-----|-------------|
-| Routes | 1 hour | `route:{origin}:{dest}:{waypoints_hash}` |
-| Places | 7 days | `place:{google_places_id}` |
-| Geocoding | 7 days | `geocode:{address_hash}` |
-| Anchors | 30 days | `anchor:{user_id}` |
-| Disambiguation | 14 days | `disamb:{query}:{location}` |
+| Data | TTL | Key Pattern |
+|------|-----|-------------|
+| Routes | 1 hour | `route:{hash}` |
+| Places | 7 days | `place:{placeId}` |
+| Anchors | 30 days | `anchors:{userId}` |
+| STT sessions | 5 min | `stt:{sessionId}` |
+
+---
 
 ## Error Handling
 
-### Standard Error Response
-```typescript
-interface ErrorResponse {
-  error: {
-    code: string;
-    message: string;
-    suggestions?: ActionSuggestion[];
-    details?: Record<string, any>;
-  };
-}
+### Voice Errors
 
-// Error codes
-type ErrorCode =
-  | 'NO_RESULTS_FOUND'
-  | 'ROUTE_EXCEEDS_BUDGET'
-  | 'LOCATION_UNAVAILABLE'
-  | 'DISAMBIGUATION_REQUIRED'
-  | 'API_QUOTA_EXCEEDED';
+```typescript
+// STT failure
+{ type: 'error', code: 'STT_FAILED', message: 'Could not understand audio' }
+→ Return to LISTENING state
+
+// No places found
+{ type: 'clarification', message: 'I couldn\'t find any [stop] near your route. Skip it or search wider?' }
+→ Offer voice options
+
+// Route too far
+{ type: 'route_data', warnings: [{ message: 'This adds 15 minutes...' }] }
+→ Ask for confirmation
 ```
 
-### Fallback Strategies
-- API quota exceeded -> Use cached data with freshness warning
-- No results found -> Suggest expanding search radius
-- Route too long -> Suggest removing stops or expanding budget
+### REST Errors
 
-## Development Guidelines
+```typescript
+interface ErrorResponse {
+  success: false;
+  error: {
+    code: 'NO_RESULTS' | 'INVALID_DESTINATION' | 'API_ERROR';
+    message: string;
+    suggestions?: string[];
+  };
+}
+```
 
-### When implementing a new service:
-1. Create module under `src/modules/{name}/`
-2. Define DTOs in `dtos/` folder
-3. Implement service with proper dependency injection
-4. Add comprehensive error handling
-5. Write unit tests with Jest
-6. Cache API responses where appropriate
-
-### When adding an endpoint:
-1. Define request/response DTOs with class-validator
-2. Implement controller method
-3. Add proper authentication guards
-4. Document with Swagger decorators
-5. Add integration tests with Supertest
-
-### Testing Requirements
-- Unit tests: All services (DetourBuffer, PlaceSearch, Optimization, etc.)
-- Integration tests: All API endpoints
-- Target: 80%+ code coverage
-- Framework: Jest + Supertest
+---
 
 ## Performance Targets
 
-- Response time: < 2 seconds
-- Handle 1000 requests/hour
-- 95% cache hit rate for repeated routes
-- 90%+ routes fit within budget on first try
+| Metric | Target |
+|--------|--------|
+| Voice latency (silence → response) | < 500ms |
+| STT streaming latency | < 200ms |
+| Route calculation | < 1s |
+| TTS generation start | < 300ms |
+| REST API response | < 2s |
+
+---
+
+## Development Guidelines
+
+### When implementing voice features:
+1. Handle WebSocket lifecycle (connect, disconnect, reconnect)
+2. Implement proper audio buffer management
+3. Handle interrupt scenarios gracefully
+4. Stream TTS chunks as they're generated
+5. Log all voice sessions for debugging
+
+### When implementing route planning:
+1. Always return a route (never hard block)
+2. Find category winner first, then alternatives
+3. Include alternatives only for text mode
+4. Generate warning messages for significant detours
+5. Pre-generate voiceMessage for TTS
+
+### Testing Requirements
+- Unit tests: All services
+- Integration: Voice pipeline end-to-end
+- Load testing: WebSocket connections
+- Test interrupt handling
+- Test offline scenarios (REST fallback)
+
+---
 
 ## Environment Variables
 
 ```
-DATABASE_URL=postgresql://user:pass@localhost/errand_db
-REDIS_URL=redis://localhost:6379
+# Database
+DATABASE_URL=postgresql://...
+
+# Redis
+REDIS_URL=redis://...
+
+# Google Cloud
 GOOGLE_MAPS_API_KEY=...
 GOOGLE_PLACES_API_KEY=...
-RASA_NLU_URL=http://rasa:5005
-CLAUDE_API_KEY=...
+GOOGLE_CLOUD_PROJECT=...
+GOOGLE_APPLICATION_CREDENTIALS=...
+
+# Gemini
+GEMINI_API_KEY=...
+
+# Server
+PORT=3000
 NODE_ENV=production
 ```

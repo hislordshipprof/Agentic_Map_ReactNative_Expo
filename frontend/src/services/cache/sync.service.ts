@@ -74,7 +74,6 @@ class SyncServiceImpl {
     this.handleNetworkChange(state);
 
     this.isInitialized = true;
-    console.log('[SyncService] Initialized');
   }
 
   /**
@@ -145,13 +144,10 @@ class SyncServiceImpl {
       const isStale = Date.now() - lastSync > SyncConfig.STALE_THRESHOLD_MS;
 
       if (!isStale && !force) {
-        console.log('[SyncService] Cache is fresh, skipping sync');
         this.isSyncing = false;
         store.dispatch(setSyncStatus('idle'));
         return result;
       }
-
-      console.log('[SyncService] Starting sync...');
 
       // Sync anchors
       try {
@@ -167,8 +163,8 @@ class SyncServiceImpl {
             result.stopsUpdated += 1;
           }
         }
-      } catch (error) {
-        console.warn('[SyncService] Failed to sync anchors:', error);
+      } catch {
+        // Failed to sync anchors - will retry later
       }
 
       // Update last sync time
@@ -188,12 +184,10 @@ class SyncServiceImpl {
 
       this.retryCount = 0;
       store.dispatch(setSyncStatus('idle'));
-      console.log('[SyncService] Sync completed:', result);
 
     } catch (error) {
       result.success = false;
       result.error = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[SyncService] Sync failed:', error);
 
       // Retry logic
       if (this.retryCount < SyncConfig.MAX_RETRIES) {
@@ -226,8 +220,8 @@ class SyncServiceImpl {
       if (response.data?.suggestions) {
         await CacheService.cacheStopsForAnchor(anchor.id, response.data.suggestions as import('@/types/route').RouteStop[]);
       }
-    } catch (error) {
-      console.warn(`[SyncService] Failed to sync stops for anchor ${anchor.id}:`, error);
+    } catch {
+      // Failed to sync stops for anchor - will retry later
     }
   }
 
@@ -269,7 +263,6 @@ class SyncServiceImpl {
     }
 
     this.isInitialized = false;
-    console.log('[SyncService] Disposed');
   }
 }
 
