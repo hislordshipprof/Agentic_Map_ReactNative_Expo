@@ -1,16 +1,16 @@
 /**
  * useVoiceMode - Voice mode orchestration hook
  *
- * Connects VoiceClient, AudioRecorder, and AudioPlayer with Redux state.
+ * Connects VoiceClient, AudioStreamRecorder, and AudioPlayer with Redux state.
  * Handles the complete voice flow:
  * - WebSocket connection management
- * - Audio recording start/stop
+ * - Real-time audio streaming (100ms chunks)
  * - TTS playback
  * - State transitions
  * - Confirmation actions
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import type { RootState, AppDispatch } from '@/redux/store';
 import {
@@ -43,11 +43,7 @@ import {
   type StateChangeEvent,
   type VoiceErrorEvent,
 } from '@/services/voice/VoiceClient';
-import {
-  AudioRecorder,
-  getAudioRecorder,
-  resetAudioRecorder,
-} from '@/services/voice/AudioRecorder';
+import { useAudioStream } from '@/services/voice/AudioStreamRecorder';
 import {
   AudioPlayer,
   getAudioPlayer,
@@ -131,9 +127,55 @@ export function useVoiceMode(): UseVoiceModeResult {
 
   // Refs for services (initialized lazily)
   const voiceClientRef = useRef<VoiceClient | null>(null);
-  const audioRecorderRef = useRef<AudioRecorder | null>(null);
   const audioPlayerRef = useRef<AudioPlayer | null>(null);
   const isInitializedRef = useRef(false);
+
+  /**
+   * Audio stream callbacks - memoized to prevent re-renders
+   */
+  const audioStreamCallbacks = useMemo(() => ({
+    onAudioChunk: (base64Data: string, _sequenceNumber: number) => {
+      // Stream audio to backend via WebSocket
+      voiceClientRef.current?.sendAudio(base64Data);
+    },
+    onAudioLevel: (level: number) => {
+      dispatch(setAudioLevel(level));
+    },
+    onRecordingStart: () => {
+      // Recording started - state is already set by VoiceClient events
+    },
+    onRecordingStop: () => {
+      // Signal end of speech to backend
+      voiceClientRef.current?.endSpeech();
+    },
+    onError: (err: Error) => {
+      dispatch(setVoiceError({
+        message: err.message,
+        recoverable: true,
+      }));
+    },
+    onPermissionDenied: () => {
+      dispatch(setVoiceError({
+        message: 'Microphone permission denied',
+        code: 'PERMISSION_DENIED',
+        recoverable: false,
+      }));
+    },
+  }), [dispatch]);
+
+  /**
+   * Use the new audio streaming hook for real-time 100ms chunks
+   */
+  const {
+    startStreaming,
+    stopStreaming,
+    isStreaming,
+  } = useAudioStream(audioStreamCallbacks, {
+    sampleRate: 16000,
+    channels: 1,
+    encoding: 'pcm_16bit',
+    intervalMs: 100,
+  });
 
   /**
    * Initialize services with callbacks
@@ -201,27 +243,6 @@ export function useVoiceMode(): UseVoiceModeResult {
       },
     });
 
-    // Get or create AudioRecorder
-    audioRecorderRef.current = getAudioRecorder();
-    audioRecorderRef.current.setCallbacks({
-      onAudioLevel: (data) => {
-        dispatch(setAudioLevel(data.level));
-      },
-      onError: (err) => {
-        dispatch(setVoiceError({
-          message: err.message,
-          recoverable: true,
-        }));
-      },
-      onPermissionDenied: () => {
-        dispatch(setVoiceError({
-          message: 'Microphone permission denied',
-          code: 'PERMISSION_DENIED',
-          recoverable: false,
-        }));
-      },
-    });
-
     // Get or create AudioPlayer
     audioPlayerRef.current = getAudioPlayer();
     audioPlayerRef.current.setCallbacks({
@@ -271,12 +292,15 @@ export function useVoiceMode(): UseVoiceModeResult {
   /**
    * Disconnect from voice gateway
    */
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback(async () => {
+    // Stop streaming if active
+    if (isStreaming) {
+      await stopStreaming();
+    }
     voiceClientRef.current?.disconnect();
-    audioRecorderRef.current?.cleanup();
     audioPlayerRef.current?.cleanup();
     dispatch(resetVoice());
-  }, [dispatch]);
+  }, [dispatch, isStreaming, stopStreaming]);
 
   /**
    * Toggle voice mode
@@ -294,9 +318,9 @@ export function useVoiceMode(): UseVoiceModeResult {
   const handleMicPress = useCallback(async () => {
     initializeServices();
 
-    // If currently listening, stop
-    if (status === 'listening') {
-      await audioRecorderRef.current?.stop();
+    // If currently listening/streaming, stop
+    if (status === 'listening' || isStreaming) {
+      await stopStreaming();
       voiceClientRef.current?.endSpeech();
       dispatch(stopListening());
       return;
@@ -322,17 +346,23 @@ export function useVoiceMode(): UseVoiceModeResult {
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
-    // Start voice session
+    // Start voice session and audio streaming
     try {
       voiceClientRef.current?.startSession();
-      await audioRecorderRef.current?.start();
+      const started = await startStreaming();
+      if (!started) {
+        dispatch(setVoiceError({
+          message: 'Failed to start audio streaming',
+          recoverable: true,
+        }));
+      }
     } catch (err) {
       dispatch(setVoiceError({
         message: err instanceof Error ? err.message : 'Failed to start recording',
         recoverable: true,
       }));
     }
-  }, [status, connect, dispatch, initializeServices]);
+  }, [status, isStreaming, connect, dispatch, initializeServices, startStreaming, stopStreaming]);
 
   /**
    * Handle confirm action
@@ -370,7 +400,6 @@ export function useVoiceMode(): UseVoiceModeResult {
     return () => {
       if (isInitializedRef.current) {
         resetVoiceClient();
-        resetAudioRecorder();
         resetAudioPlayer();
         isInitializedRef.current = false;
       }

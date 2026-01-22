@@ -3,10 +3,10 @@
  *
  * Services for voice mode functionality:
  * - VoiceClient: WebSocket communication with backend
- * - AudioRecorder: Microphone capture
+ * - AudioStreamRecorder: Real-time microphone streaming (100ms chunks)
  * - AudioPlayer: TTS playback
  */
 
 export * from './VoiceClient';
-export * from './AudioRecorder';
+export * from './AudioStreamRecorder';
 export * from './AudioPlayer';
