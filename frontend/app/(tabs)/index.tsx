@@ -24,7 +24,8 @@ import { Ionicons } from '@expo/vector-icons';
 // Components
 import { AnimatedMessage } from '@/components/Conversation';
 import type { Message } from '@/components/Conversation';
-import { useRoute, useNLUFlow, useLocation, useVoiceInput } from '@/hooks';
+import { useRoute, useNLUFlow, useLocation, useVoiceInput, useVoiceMode } from '@/hooks';
+import { VoiceMicButton, VoiceStatusIndicator, CircularWaveform } from '@/components/Voice';
 import {
   GlassCard,
   ThinkingBubble,
@@ -141,10 +142,32 @@ export default function ConversationScreen(): JSX.Element {
     shouldShowConfirmation,
     shouldShowAlternatives,
   } = useNLUFlow();
-  const { currentLocation, locationError, isLoading: locationLoading } = useLocation();
+  const {
+    currentLocation,
+    address,
+    locationStatus,
+    locationError,
+    isLoading: locationLoading,
+    isFromCache,
+  } = useLocation();
+
+  // Voice mode hook
+  const {
+    status: voiceStatus,
+    transcript: voiceTranscript,
+    partialTranscript,
+    audioLevel,
+    isVoiceModeEnabled,
+    suggestedResponse,
+    toggleVoice,
+    handleMicPress,
+    handleConfirm: handleVoiceConfirm,
+    handleReject: handleVoiceReject,
+  } = useVoiceMode();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [processingPhase, setProcessingPhase] = useState<'idle' | 'understanding' | 'planning_route'>('idle');
   const [isRecording, setIsRecording] = useState(false);
   const navigateDoneRef = useRef(false);
   const escalationInProgressRef = useRef(false);
@@ -208,7 +231,12 @@ export default function ConversationScreen(): JSX.Element {
       !entities.destination ||
       navigateDoneRef.current
     ) return;
-    doNavigate(entities, currentLocation);
+    setProcessingPhase('planning_route');
+    setIsLoading(true);
+    doNavigate(entities, currentLocation).finally(() => {
+      setProcessingPhase('idle');
+      setIsLoading(false);
+    });
   }, [flowState, intent, entities, currentLocation, doNavigate]);
 
   // Escalating: call escalateToLLM
@@ -271,12 +299,14 @@ export default function ConversationScreen(): JSX.Element {
       }
 
       navigateDoneRef.current = false;
+      setProcessingPhase('understanding');
       setIsLoading(true);
       try {
         await processUtterance(text, currentLocation ?? undefined);
       } catch (e) {
         appendSystem(e instanceof Error ? e.message : 'Something went wrong.');
       } finally {
+        setProcessingPhase('idle');
         setIsLoading(false);
       }
     },
@@ -357,6 +387,52 @@ export default function ConversationScreen(): JSX.Element {
           <Text style={styles.greeting}>Hi there!</Text>
           <Text style={styles.question}>How can I help you?</Text>
           <Text style={styles.assistantReady}>Your smart assistant is ready</Text>
+          <View style={styles.locationPill}>
+            {/* Status indicator dot */}
+            <View
+              style={[
+                styles.locationStatusDot,
+                locationStatus === 'ready' && styles.locationStatusDotReady,
+                locationStatus === 'stale' && styles.locationStatusDotStale,
+                locationStatus === 'loading' && styles.locationStatusDotLoading,
+                (locationStatus === 'error' || locationStatus === 'denied') &&
+                  styles.locationStatusDotError,
+              ]}
+            />
+            <Ionicons
+              name={locationStatus === 'denied' ? 'location-outline' : 'location'}
+              size={14}
+              color={
+                locationStatus === 'error' || locationStatus === 'denied'
+                  ? Colors.semantic.error
+                  : locationStatus === 'ready'
+                    ? Colors.primary.teal
+                    : Colors.dark.text.tertiary
+              }
+            />
+            <Text
+              style={[
+                styles.locationPillText,
+                locationStatus === 'ready' && styles.locationPillReady,
+                (locationStatus === 'error' || locationStatus === 'denied') &&
+                  styles.locationPillError,
+                isFromCache && locationStatus === 'stale' && styles.locationPillStale,
+              ]}
+              numberOfLines={1}
+            >
+              {locationStatus === 'denied'
+                ? 'Enable location'
+                : locationStatus === 'error'
+                  ? 'Location unavailable'
+                  : locationStatus === 'loading' && !address
+                    ? 'Acquiring location...'
+                    : address
+                      ? locationStatus === 'stale'
+                        ? `${address} (updating)`
+                        : address
+                      : 'Acquiring location...'}
+            </Text>
+          </View>
         </Animated.View>
 
         {/* Main Content */}
@@ -443,21 +519,76 @@ export default function ConversationScreen(): JSX.Element {
           {/* Loading Indicator */}
           {isLoading && (
             <View style={styles.thinkingContainer}>
-              <ThinkingBubble />
+              <ThinkingBubble
+                message={
+                  processingPhase === 'understanding'
+                    ? 'Understanding your request...'
+                    : processingPhase === 'planning_route'
+                      ? 'Finding the best stops and route...'
+                      : undefined
+                }
+              />
             </View>
           )}
         </ScrollView>
 
-        {/* Input Field */}
-        <UserInputField
-          onSend={handleSend}
-          onVoicePress={handleVoicePress}
-          onVoiceRelease={handleVoiceRelease}
-          isLoading={isLoading}
-          isRecording={isRecording}
-          showVoiceButton
-          placeholder="Type a message..."
-        />
+        {/* Input Area - Voice or Text Mode */}
+        {isVoiceModeEnabled ? (
+          <View style={styles.voiceInputArea}>
+            {/* Voice Status Indicator */}
+            <VoiceStatusIndicator
+              status={voiceStatus}
+              transcript={partialTranscript || voiceTranscript}
+              suggestedResponse={suggestedResponse ?? undefined}
+              audioLevel={audioLevel}
+              showBackground={voiceStatus !== 'idle'}
+            />
+
+            {/* Circular Waveform around mic button */}
+            <View style={styles.micContainer}>
+              <CircularWaveform
+                isActive={voiceStatus === 'listening'}
+                audioLevel={audioLevel}
+                size={100}
+              />
+              <VoiceMicButton
+                status={voiceStatus}
+                onPress={handleMicPress}
+                onConfirm={handleVoiceConfirm}
+                onReject={handleVoiceReject}
+                size={72}
+              />
+            </View>
+
+            {/* Mode toggle */}
+            <Pressable
+              style={styles.modeToggle}
+              onPress={toggleVoice}
+            >
+              <Ionicons name="chatbubble-outline" size={18} color={Colors.dark.text.tertiary} />
+              <Text style={styles.modeToggleText}>Switch to text</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.textInputArea}>
+            <UserInputField
+              onSend={handleSend}
+              onVoicePress={handleVoicePress}
+              onVoiceRelease={handleVoiceRelease}
+              isLoading={isLoading}
+              isRecording={isRecording}
+              showVoiceButton
+              placeholder="Type a message..."
+            />
+            {/* Voice mode toggle button */}
+            <Pressable
+              style={styles.voiceModeButton}
+              onPress={toggleVoice}
+            >
+              <Ionicons name="mic" size={20} color={Colors.primary.teal} />
+            </Pressable>
+          </View>
+        )}
       </SafeAreaView>
 
       <ConfirmationDialog
@@ -526,6 +657,51 @@ const styles = StyleSheet.create({
     fontSize: FontSize.base,
     color: Colors.primary.teal,
     opacity: 0.8,
+  },
+  locationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: Spacing.xs,
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 12,
+  },
+  locationPillText: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.xs,
+    color: Colors.dark.text.tertiary,
+    maxWidth: 200,
+  },
+  locationPillReady: {
+    color: Colors.dark.text.secondary,
+  },
+  locationPillError: {
+    color: Colors.semantic.error,
+  },
+  locationPillStale: {
+    color: Colors.dark.text.tertiary,
+    fontStyle: 'italic',
+  },
+  locationStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.dark.text.tertiary,
+  },
+  locationStatusDotReady: {
+    backgroundColor: Colors.primary.teal,
+  },
+  locationStatusDotStale: {
+    backgroundColor: '#F59E0B', // Yellow/amber for stale
+  },
+  locationStatusDotLoading: {
+    backgroundColor: Colors.dark.text.tertiary,
+  },
+  locationStatusDotError: {
+    backgroundColor: Colors.semantic.error,
   },
   scrollView: {
     flex: 1,
@@ -642,5 +818,49 @@ const styles = StyleSheet.create({
   thinkingContainer: {
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.sm,
+  },
+  // Voice input area styles
+  voiceInputArea: {
+    alignItems: 'center',
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    backgroundColor: Colors.effects.glassDark,
+    borderTopWidth: 1,
+    borderTopColor: Colors.effects.glassDarkBorder,
+  },
+  micContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: Spacing.lg,
+    position: 'relative',
+  },
+  modeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+  },
+  modeToggleText: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.sm,
+    color: Colors.dark.text.tertiary,
+  },
+  textInputArea: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  voiceModeButton: {
+    position: 'absolute',
+    right: Spacing.lg,
+    bottom: Spacing.xl,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.effects.glassDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.primary.teal,
   },
 });

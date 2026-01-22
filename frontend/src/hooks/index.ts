@@ -24,7 +24,11 @@ export {
 } from './useOffline';
 
 // Location hook (current position for conversation and navigate)
-export { useLocation, type UseLocationResult } from './useLocation';
+export {
+  useLocation,
+  type UseLocationResult,
+  type LocationStatus,
+} from './useLocation';
 
 // Error handling hook
 export {
@@ -47,3 +51,9 @@ export {
   type UseVoiceInputOptions,
   type UseVoiceInputResult,
 } from './useVoiceInput';
+
+// Voice mode hook (full voice flow orchestration)
+export {
+  useVoiceMode,
+  type UseVoiceModeResult,
+} from './useVoiceMode';

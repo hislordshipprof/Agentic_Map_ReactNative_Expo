@@ -8,6 +8,7 @@ import {
   offlineReducer,
   errorReducer,
   loadingReducer,
+  voiceReducer,
 } from './slices';
 
 /**
@@ -34,6 +35,7 @@ export const store = configureStore({
     offline: offlineReducer,
     error: errorReducer,
     loading: loadingReducer,
+    voice: voiceReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
