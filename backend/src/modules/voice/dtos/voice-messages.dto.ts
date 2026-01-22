@@ -208,6 +208,6 @@ export const VoiceDefaults = {
   AUDIO_ENCODING: AudioEncoding.LINEAR16,
   SAMPLE_RATE_HERTZ: 16000,
   LANGUAGE_CODE: 'en-US',
-  VAD_SILENCE_THRESHOLD_MS: 1500,
+  VAD_SILENCE_THRESHOLD_MS: 700, // Per FINAL_REQUIREMENTS.md - 700ms silence threshold
   MAX_SESSION_DURATION_MS: 300000, // 5 minutes
 } as const;

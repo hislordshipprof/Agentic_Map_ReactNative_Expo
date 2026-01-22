@@ -44,6 +44,7 @@ export class AudioPlayer {
   private state: PlaybackState = 'idle';
   private isPlaying = false;
   private isProcessingQueue = false;
+  private stopRequested = false; // Flag to signal stop during queue processing
 
   constructor(callbacks: AudioPlayerCallbacks = {}) {
     this.callbacks = callbacks;
@@ -95,9 +96,11 @@ export class AudioPlayer {
    * Stop playback immediately (for interrupt)
    */
   async stop(): Promise<void> {
+    // Signal stop to any running queue processor
+    this.stopRequested = true;
+
     // Clear queue
     this.queue = [];
-    this.isProcessingQueue = false;
 
     // Stop current sound
     if (this.sound) {
@@ -110,6 +113,8 @@ export class AudioPlayer {
       this.sound = null;
     }
 
+    this.isPlaying = false;
+    this.isProcessingQueue = false;
     this.updateState('idle');
   }
 
@@ -175,14 +180,25 @@ export class AudioPlayer {
     }
 
     this.isProcessingQueue = true;
+    this.stopRequested = false; // Reset stop flag when starting
     this.callbacks.onPlaybackStart?.();
     this.updateState('playing');
 
     while (this.queue.length > 0) {
+      // Check if stop was requested (fixes race condition)
+      if (this.stopRequested) {
+        break;
+      }
+
       const chunk = this.queue.shift();
       if (!chunk) break;
 
       await this.playChunk(chunk.data);
+
+      // Check again after async operation
+      if (this.stopRequested) {
+        break;
+      }
 
       // If this was the last chunk and it's complete, we're done
       if (chunk.isComplete && this.queue.length === 0) {
@@ -190,9 +206,12 @@ export class AudioPlayer {
       }
     }
 
-    this.isProcessingQueue = false;
-    this.updateState('idle');
-    this.callbacks.onPlaybackEnd?.();
+    // Only update state if we weren't stopped externally
+    if (!this.stopRequested) {
+      this.isProcessingQueue = false;
+      this.updateState('idle');
+      this.callbacks.onPlaybackEnd?.();
+    }
   }
 
   /**

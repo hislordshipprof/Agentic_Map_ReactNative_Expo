@@ -129,6 +129,12 @@ export function useVoiceMode(): UseVoiceModeResult {
   const voiceClientRef = useRef<VoiceClient | null>(null);
   const audioPlayerRef = useRef<AudioPlayer | null>(null);
   const isInitializedRef = useRef(false);
+  const wasStreamingBeforeDisconnect = useRef(false); // Track if streaming was active before disconnect
+  const statusRef = useRef(status); // Ref to track current status for callbacks
+  const isStreamingRef = useRef(false); // Ref to track streaming state for callbacks
+
+  // Keep refs in sync with state
+  statusRef.current = status;
 
   /**
    * Audio stream callbacks - memoized to prevent re-renders
@@ -177,6 +183,9 @@ export function useVoiceMode(): UseVoiceModeResult {
     intervalMs: 100,
   });
 
+  // Keep isStreamingRef in sync with isStreaming (for callbacks)
+  isStreamingRef.current = isStreaming;
+
   /**
    * Initialize services with callbacks
    */
@@ -188,9 +197,24 @@ export function useVoiceMode(): UseVoiceModeResult {
     voiceClientRef.current.setCallbacks({
       onConnected: () => {
         dispatch(setConnected(true));
-        dispatch(setVoiceStatus('idle'));
+        // If we were streaming before disconnect, show error to user
+        // (auto-restart would be confusing - let user tap mic again)
+        if (wasStreamingBeforeDisconnect.current) {
+          wasStreamingBeforeDisconnect.current = false;
+          dispatch(setVoiceError({
+            message: 'Connection restored. Please tap mic to continue.',
+            recoverable: true,
+          }));
+          dispatch(setVoiceStatus('idle'));
+        } else {
+          dispatch(setVoiceStatus('idle'));
+        }
       },
       onDisconnected: (reason) => {
+        // Track if we were actively streaming (Bug #2 fix - use refs for current values)
+        if (statusRef.current === 'listening' || isStreamingRef.current) {
+          wasStreamingBeforeDisconnect.current = true;
+        }
         dispatch(setConnected(false));
         if (reason !== 'io client disconnect') {
           dispatch(setVoiceError({
@@ -318,9 +342,11 @@ export function useVoiceMode(): UseVoiceModeResult {
   const handleMicPress = useCallback(async () => {
     initializeServices();
 
-    // If currently listening/streaming, stop
+    // If currently listening/streaming, stop (Bug #3 fix - proper sequence)
     if (status === 'listening' || isStreaming) {
+      // First stop streaming completely
       await stopStreaming();
+      // Then signal end of speech to backend (after streaming is stopped)
       voiceClientRef.current?.endSpeech();
       dispatch(stopListening());
       return;
@@ -344,6 +370,15 @@ export function useVoiceMode(): UseVoiceModeResult {
       await connect();
       // Wait a bit for connection to establish
       await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    // Bug #5 fix - Check if connection succeeded after the delay
+    if (!voiceClientRef.current?.isConnected()) {
+      dispatch(setVoiceError({
+        message: 'Could not connect to voice server. Please try again.',
+        recoverable: true,
+      }));
+      return;
     }
 
     // Start voice session and audio streaming

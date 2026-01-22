@@ -228,6 +228,14 @@ export const VoiceMicButton: React.FC<VoiceMicButtonProps> = ({
         spinnerRotation.value = 0;
         break;
     }
+
+    // Cleanup function to cancel animations on unmount (fixes memory leak)
+    return () => {
+      cancelAnimation(pulseScale);
+      cancelAnimation(ringRotation);
+      cancelAnimation(glowOpacity);
+      cancelAnimation(spinnerRotation);
+    };
   }, [status, pulseScale, glowOpacity, ringRotation, spinnerRotation]);
 
   // Animated styles
