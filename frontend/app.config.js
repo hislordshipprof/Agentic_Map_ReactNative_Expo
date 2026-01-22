@@ -65,6 +65,7 @@ module.exports = {
           speechRecognitionPermission: "This app uses speech recognition to turn your voice into text for planning routes.",
         },
       ],
+      "@siteed/expo-audio-studio",
       "./plugins/withAndroidGradleJdk21",
       "./plugins/withGoogleMapsApiKeyPlaceholder",
     ],
