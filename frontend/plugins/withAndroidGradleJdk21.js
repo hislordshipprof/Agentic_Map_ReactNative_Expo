@@ -1,4 +1,4 @@
-/** Pins AGP 8.4.2 and Gradle 8.6 so Android builds work with JDK 21. Re-applied on `expo prebuild`. */
+/** Pins AGP 8.4.2 and Gradle 8.6 for JDK 21 compatibility. Re-applied on `expo prebuild`. */
 
 const { withProjectBuildGradle, withDangerousMod } = require("@expo/config-plugins");
 const fs = require("fs");
@@ -28,7 +28,7 @@ function withAndroidGradleJdk21(config) {
       );
       if (fs.existsSync(gp)) {
         let c = fs.readFileSync(gp, "utf8");
-        c = c.replace(/gradle-8\.(3|4|5)-all\.zip/, "gradle-8.6-all.zip");
+        c = c.replace(/gradle-8\.(3|4|5|6|7)-all\.zip/, "gradle-8.6-all.zip");
         fs.writeFileSync(gp, c);
       }
       return cfg;

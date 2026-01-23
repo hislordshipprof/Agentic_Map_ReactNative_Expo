@@ -58,15 +58,8 @@ module.exports = {
       "expo-router",
       "expo-location",
       "expo-secure-store",
-      [
-        "@react-native-voice/voice",
-        {
-          microphonePermission: "This app uses the microphone for voice input so you can say your destination and stops.",
-          speechRecognitionPermission: "This app uses speech recognition to turn your voice into text for planning routes.",
-        },
-      ],
+      "expo-font",
       "@siteed/expo-audio-studio",
-      "./plugins/withAndroidGradleJdk21",
       "./plugins/withGoogleMapsApiKeyPlaceholder",
     ],
     experiments: {

@@ -125,6 +125,7 @@ export interface VoiceClientCallbacks {
   onTtsAudio?: (event: TtsAudioEvent) => void;
   onStateChange?: (event: StateChangeEvent) => void;
   onError?: (event: VoiceErrorEvent) => void;
+  onProcessingInterrupted?: (timestamp: number) => void; // Barge-in acknowledged by server
 }
 
 /**
@@ -136,6 +137,7 @@ const ClientEvents = {
   END_SPEECH: 'voice:end_speech',
   STOP_SESSION: 'voice:stop',
   CANCEL_TTS: 'voice:cancel_tts',
+  INTERRUPT: 'voice:interrupt', // Barge-in: user started speaking during processing
 } as const;
 
 /**
@@ -152,6 +154,7 @@ const ServerEvents = {
   TTS_AUDIO: 'voice:tts_audio',
   STATE_CHANGE: 'voice:state_change',
   ERROR: 'voice:error',
+  PROCESSING_INTERRUPTED: 'voice:processing_interrupted', // Barge-in acknowledged
 } as const;
 
 /**
@@ -164,6 +167,15 @@ const DEFAULT_CONFIG = {
 };
 
 /**
+ * Buffered audio chunk (for sending before session is ready)
+ */
+interface BufferedAudioChunk {
+  audioData: string;
+  sequenceNumber: number;
+  timestamp: number;
+}
+
+/**
  * VoiceClient class
  */
 export class VoiceClient {
@@ -172,6 +184,9 @@ export class VoiceClient {
   private callbacks: VoiceClientCallbacks;
   private sequenceNumber = 0;
   private config: VoiceSessionConfig = DEFAULT_CONFIG;
+  private audioBuffer: BufferedAudioChunk[] = [];
+  private isBufferingEnabled = false;
+  private readonly MAX_BUFFER_SIZE = 50; // ~5 seconds at 100ms chunks
 
   constructor(callbacks: VoiceClientCallbacks = {}) {
     this.callbacks = callbacks;
@@ -332,20 +347,76 @@ export class VoiceClient {
   }
 
   /**
-   * Send audio chunk to server
+   * Enable audio buffering (call before starting recording, before session is ready)
    */
-  sendAudio(audioData: string): void {
-    // Log every call to sendAudio for debugging
-    if (!this.socket?.connected) {
-      console.warn('[VoiceClient] Cannot send audio: socket not connected');
+  enableBuffering(): void {
+    this.isBufferingEnabled = true;
+    this.audioBuffer = [];
+    this.sequenceNumber = 0;
+    console.log('[VoiceClient] Audio buffering enabled');
+  }
+
+  /**
+   * Flush buffered audio to server (call after session is confirmed)
+   */
+  flushBuffer(): void {
+    if (!this.socket?.connected || !this.sessionId) {
+      console.warn('[VoiceClient] Cannot flush buffer: not ready');
       return;
     }
+
+    const bufferSize = this.audioBuffer.length;
+    if (bufferSize > 0) {
+      console.log(`[VoiceClient] Flushing ${bufferSize} buffered audio chunks`);
+
+      for (const chunk of this.audioBuffer) {
+        this.socket.emit(ClientEvents.AUDIO_CHUNK, {
+          sessionId: this.sessionId,
+          audioData: chunk.audioData,
+          sequenceNumber: chunk.sequenceNumber,
+          timestamp: chunk.timestamp,
+        });
+      }
+
+      this.audioBuffer = [];
+    }
+
+    this.isBufferingEnabled = false;
+  }
+
+  /**
+   * Send audio chunk to server (or buffer if session not ready)
+   */
+  sendAudio(audioData: string): void {
+    const seq = this.sequenceNumber++;
+    const timestamp = Date.now();
+
+    // If socket not connected, can't do anything
+    if (!this.socket?.connected) {
+      console.warn('[VoiceClient] Cannot send/buffer audio: socket not connected');
+      return;
+    }
+
+    // If session not ready but buffering enabled, buffer the chunk
+    if (!this.sessionId && this.isBufferingEnabled) {
+      if (this.audioBuffer.length < this.MAX_BUFFER_SIZE) {
+        this.audioBuffer.push({ audioData, sequenceNumber: seq, timestamp });
+        if (seq < 5) {
+          console.log(`[VoiceClient] Buffering audio chunk #${seq}, bufferSize=${this.audioBuffer.length}`);
+        }
+      } else {
+        // Buffer full, drop oldest chunk (sliding window)
+        this.audioBuffer.shift();
+        this.audioBuffer.push({ audioData, sequenceNumber: seq, timestamp });
+      }
+      return;
+    }
+
+    // If session not ready and buffering not enabled, drop
     if (!this.sessionId) {
       console.warn('[VoiceClient] Cannot send audio: sessionId is null');
       return;
     }
-
-    const seq = this.sequenceNumber++;
 
     // Log first few chunks to verify data is flowing
     if (seq < 5) {
@@ -356,7 +427,7 @@ export class VoiceClient {
       sessionId: this.sessionId,
       audioData,
       sequenceNumber: seq,
-      timestamp: Date.now(),
+      timestamp,
     });
   }
 
@@ -400,6 +471,22 @@ export class VoiceClient {
 
     this.socket.emit(ClientEvents.CANCEL_TTS, {
       sessionId: this.sessionId,
+    });
+  }
+
+  /**
+   * Interrupt processing (barge-in)
+   * Called when user starts speaking during PROCESSING state
+   */
+  interruptProcessing(): void {
+    if (!this.socket?.connected || !this.sessionId) {
+      return;
+    }
+
+    console.log('[VoiceClient] Sending interrupt (barge-in)');
+    this.socket.emit(ClientEvents.INTERRUPT, {
+      sessionId: this.sessionId,
+      timestamp: Date.now(),
     });
   }
 
@@ -478,6 +565,15 @@ export class VoiceClient {
     // Error
     this.socket.on(ServerEvents.ERROR, (data: VoiceErrorEvent) => {
       this.callbacks.onError?.(data);
+    });
+
+    // Processing interrupted (barge-in acknowledged)
+    this.socket.on(ServerEvents.PROCESSING_INTERRUPTED, (data: {
+      sessionId: string;
+      timestamp: number;
+    }) => {
+      console.log('[VoiceClient] Processing interrupted (barge-in acknowledged)');
+      this.callbacks.onProcessingInterrupted?.(data.timestamp);
     });
   }
 }

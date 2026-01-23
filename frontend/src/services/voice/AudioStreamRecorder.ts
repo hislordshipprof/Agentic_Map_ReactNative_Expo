@@ -48,6 +48,8 @@ export interface AudioStreamCallbacks {
   onError: (error: Error) => void;
   /** Called when microphone permission is denied */
   onPermissionDenied: () => void;
+  /** Called when speech is detected (VAD) - useful for barge-in detection */
+  onSpeechDetected?: (isSpeaking: boolean, confidence: number) => void;
 }
 
 /**
@@ -87,6 +89,8 @@ export interface UseAudioStreamResult {
   hasPermission: boolean;
   /** Request microphone permission */
   requestPermission: () => Promise<boolean>;
+  /** Reset VAD state (useful when changing voice states) */
+  resetVadState: () => void;
 }
 
 /**
@@ -207,22 +211,61 @@ export function useAudioStream(
     }
   }, []);
 
+  // VAD state tracking for speech detection
+  const speechStateRef = useRef({
+    isSpeaking: false,
+    consecutiveSpeechFrames: 0,
+    consecutiveSilenceFrames: 0,
+  });
+
+  // VAD thresholds (tuned for voice detection)
+  const VAD_THRESHOLD = 0.015; // Energy threshold for speech detection
+  const SPEECH_FRAMES_REQUIRED = 3; // ~300ms at 100ms intervals
+  const SILENCE_FRAMES_REQUIRED = 5; // ~500ms to confirm silence
+
   /**
-   * Handle audio analysis data (for audio level)
+   * Handle audio analysis data (for audio level and VAD)
    */
   const handleAudioAnalysis = useCallback(async (data: AudioAnalysis) => {
+    let level = 0;
+
     // Extract audio level from analysis data
     // Use amplitudeRange for visualization
     if (data.amplitudeRange) {
       const { max } = data.amplitudeRange;
       // Normalize to 0-1 range
-      const level = Math.min(1, Math.max(0, Math.abs(max)));
+      level = Math.min(1, Math.max(0, Math.abs(max)));
       callbacksRef.current.onAudioLevel?.(level);
     } else if ('rms' in data && typeof (data as { rms?: number }).rms === 'number') {
       // RMS is already somewhat normalized, but may need adjustment
       const rms = (data as { rms: number }).rms;
-      const level = Math.min(1, Math.max(0, rms * 2));
+      level = Math.min(1, Math.max(0, rms * 2));
       callbacksRef.current.onAudioLevel?.(level);
+    }
+
+    // VAD: Detect speech based on energy threshold
+    const isSpeechFrame = level > VAD_THRESHOLD;
+    const state = speechStateRef.current;
+
+    if (isSpeechFrame) {
+      state.consecutiveSpeechFrames++;
+      state.consecutiveSilenceFrames = 0;
+
+      // Speech detected after enough consecutive frames
+      if (!state.isSpeaking && state.consecutiveSpeechFrames >= SPEECH_FRAMES_REQUIRED) {
+        state.isSpeaking = true;
+        const confidence = Math.min(1, level / 0.1); // Higher energy = higher confidence
+        callbacksRef.current.onSpeechDetected?.(true, confidence);
+      }
+    } else {
+      state.consecutiveSilenceFrames++;
+      state.consecutiveSpeechFrames = 0;
+
+      // Silence detected after enough consecutive frames
+      if (state.isSpeaking && state.consecutiveSilenceFrames >= SILENCE_FRAMES_REQUIRED) {
+        state.isSpeaking = false;
+        callbacksRef.current.onSpeechDetected?.(false, 0);
+      }
     }
   }, []);
 
@@ -315,12 +358,24 @@ export function useAudioStream(
     }
   }, [stopRecording]);
 
+  /**
+   * Reset VAD state (useful when changing voice states)
+   */
+  const resetVadState = useCallback(() => {
+    speechStateRef.current = {
+      isSpeaking: false,
+      consecutiveSpeechFrames: 0,
+      consecutiveSilenceFrames: 0,
+    };
+  }, []);
+
   return {
     startStreaming,
     stopStreaming,
     isStreaming: isRecording,
     hasPermission: hasPermissionRef.current,
     requestPermission,
+    resetVadState,
   };
 }
 

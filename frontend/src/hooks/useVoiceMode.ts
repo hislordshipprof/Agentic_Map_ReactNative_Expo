@@ -144,6 +144,8 @@ export function useVoiceMode(): UseVoiceModeResult {
   const statusRef = useRef(status); // Ref to track current status for callbacks
   const isStreamingRef = useRef(false); // Ref to track streaming state for callbacks
   const stopStreamingRef = useRef<(() => Promise<void>) | null>(null); // Ref to stopStreaming function
+  const isStartingRef = useRef(false); // Guard against double-click race condition
+  const resetVadStateRef = useRef<(() => void) | null>(null); // Ref for resetVadState to avoid stale closures
 
   // Keep refs in sync with state
   statusRef.current = status;
@@ -183,6 +185,16 @@ export function useVoiceMode(): UseVoiceModeResult {
         recoverable: false,
       }));
     },
+    onSpeechDetected: (isSpeaking: boolean, confidence: number) => {
+      // Barge-in detection: user started speaking during PROCESSING or SPEAKING
+      if (isSpeaking && (statusRef.current === 'processing' || statusRef.current === 'speaking')) {
+        console.log(`[useVoiceMode] Barge-in detected! status=${statusRef.current}, confidence=${confidence.toFixed(2)}`);
+        // Send interrupt to backend
+        voiceClientRef.current?.interruptProcessing();
+        // Transition to listening immediately (optimistic)
+        dispatch(startListening());
+      }
+    },
   }), [dispatch]);
 
   /**
@@ -192,6 +204,9 @@ export function useVoiceMode(): UseVoiceModeResult {
     startStreaming,
     stopStreaming,
     isStreaming,
+    requestPermission,
+    hasPermission,
+    resetVadState,
   } = useAudioStream(audioStreamCallbacks, {
     sampleRate: 16000,
     channels: 1,
@@ -202,6 +217,7 @@ export function useVoiceMode(): UseVoiceModeResult {
   // Keep refs in sync with hook values (for callbacks to avoid stale closures)
   isStreamingRef.current = isStreaming;
   stopStreamingRef.current = stopStreaming;
+  resetVadStateRef.current = resetVadState;
 
   /**
    * Initialize services with callbacks
@@ -253,13 +269,17 @@ export function useVoiceMode(): UseVoiceModeResult {
         dispatch(stopListening());
       },
       onSpeechEnd: async () => {
-        // VAD detected end of speech - stop audio streaming automatically
-        console.log('[useVoiceMode] Speech end detected, stopping audio streaming');
-        // Use stopStreamingRef to avoid stale closure issues
-        if (stopStreamingRef.current) {
-          await stopStreamingRef.current();
-        }
-        dispatch(stopListening());
+        // VAD detected end of current utterance
+        // IMPORTANT: Do NOT stop recording - keep mic active for barge-in detection!
+        console.log('[useVoiceMode] Speech end detected - keeping mic active for barge-in');
+
+        // Signal end of current utterance to backend (triggers processing)
+        voiceClientRef.current?.endSpeech();
+
+        // Reset VAD state for fresh detection of new speech during PROCESSING
+        resetVadStateRef.current?.();
+
+        // Note: UI state change (LISTENING → PROCESSING) handled by backend state change event
       },
       onNluResult: (event: NluResultEvent) => {
         dispatch(handleNluResult({
@@ -300,7 +320,8 @@ export function useVoiceMode(): UseVoiceModeResult {
       },
       onTtsAudio: (event: TtsAudioEvent) => {
         dispatch(startSpeaking());
-        audioPlayerRef.current?.play(event.audioData);
+        // Pass sample rate from TTS event to ensure correct playback speed
+        audioPlayerRef.current?.play(event.audioData, event.sampleRateHertz);
       },
       onStateChange: (event: StateChangeEvent) => {
         // Map backend state to frontend VoiceStatus
@@ -320,6 +341,13 @@ export function useVoiceMode(): UseVoiceModeResult {
           code: event.code,
           recoverable: event.recoverable,
         }));
+      },
+      onProcessingInterrupted: (timestamp: number) => {
+        // Backend acknowledged barge-in, transition to listening
+        console.log(`[useVoiceMode] Processing interrupted at ${timestamp}, transitioning to listening`);
+        dispatch(startListening());
+        // Reset VAD state for new utterance detection
+        resetVadStateRef.current?.();
       },
     });
 
@@ -395,28 +423,144 @@ export function useVoiceMode(): UseVoiceModeResult {
   }, [isVoiceModeEnabled, disconnect, dispatch]);
 
   /**
+   * Start listening flow - used by handleMicPress and interrupt handlers
+   * Starts recording immediately (optimistic) while session setup happens in background
+   */
+  const startListeningFlow = useCallback(async () => {
+    // Guard against double-click race condition
+    if (isStartingRef.current) {
+      console.log('[useVoiceMode] startListeningFlow already in progress, ignoring');
+      return;
+    }
+    isStartingRef.current = true;
+
+    initializeServices();
+
+    // Show "Listening" immediately for responsive UX
+    dispatch(startListening());
+
+    try {
+      // Enable audio buffering before recording starts
+      voiceClientRef.current?.enableBuffering();
+
+      // Start recording IMMEDIATELY (optimistic) - don't wait for session
+      const recordingPromise = startStreaming();
+
+      // Connect if not connected (do in parallel with recording start)
+      let connectionPromise: Promise<void> = Promise.resolve();
+      if (!voiceClientRef.current?.isConnected()) {
+        connectionPromise = connect();
+      }
+
+      // Wait for both recording and connection
+      const [recordingStarted] = await Promise.all([recordingPromise, connectionPromise]);
+
+      if (!recordingStarted) {
+        isStartingRef.current = false;
+        dispatch(setVoiceError({
+          message: 'Failed to start audio recording',
+          recoverable: true,
+        }));
+        dispatch(setVoiceStatus('idle'));
+        return;
+      }
+
+      // Check connection succeeded
+      if (!voiceClientRef.current?.isConnected()) {
+        isStartingRef.current = false;
+        await stopStreaming();
+        dispatch(setVoiceError({
+          message: 'Could not connect to voice server. Please try again.',
+          recoverable: true,
+        }));
+        dispatch(setVoiceStatus('idle'));
+        return;
+      }
+
+      // Start session async (audio is already being buffered)
+      const sessionId = await voiceClientRef.current?.startSessionAsync(
+        undefined,
+        10000,
+        currentLocation ?? undefined,
+      );
+
+      if (!sessionId) {
+        isStartingRef.current = false;
+        await stopStreaming();
+        dispatch(setVoiceError({
+          message: 'Failed to start voice session',
+          recoverable: true,
+        }));
+        dispatch(setVoiceStatus('idle'));
+        return;
+      }
+
+      // Session ready! Flush any buffered audio
+      voiceClientRef.current?.flushBuffer();
+
+      // Flow complete, reset guard
+      isStartingRef.current = false;
+
+    } catch (err) {
+      isStartingRef.current = false;
+      await stopStreaming();
+      dispatch(setVoiceError({
+        message: err instanceof Error ? err.message : 'Failed to start recording',
+        recoverable: true,
+      }));
+      dispatch(setVoiceStatus('idle'));
+    }
+  }, [connect, dispatch, initializeServices, startStreaming, stopStreaming, currentLocation]);
+
+  /**
    * Handle mic button press
    * Note: Use isStreamingRef instead of isStreaming to avoid callback recreation
    */
   const handleMicPress = useCallback(async () => {
+    // Early guard: if already starting, ignore rapid clicks
+    if (isStartingRef.current && status !== 'listening') {
+      console.log('[useVoiceMode] handleMicPress: already starting, ignoring click');
+      return;
+    }
+
     initializeServices();
 
     // If currently listening/streaming, stop (Bug #3 fix - proper sequence)
     // Use ref to avoid dependency on isStreaming which causes callback recreation
     if (status === 'listening' || isStreamingRef.current) {
-      // First stop streaming completely
+      // Reset the starting guard
+      isStartingRef.current = false;
+      // Stop streaming - onRecordingStop callback will call endSpeech()
       await stopStreaming();
-      // Then signal end of speech to backend (after streaming is stopped)
-      voiceClientRef.current?.endSpeech();
       dispatch(stopListening());
       return;
     }
 
-    // If speaking, interrupt TTS
+    // Handle "processing/thinking" state - user wants to interrupt and speak again
+    if (status === 'processing') {
+      // Cancel current processing
+      voiceClientRef.current?.stopSession();
+      // Start listening again immediately
+      await startListeningFlow();
+      return;
+    }
+
+    // Handle "connecting" state - user tapped again during connection
+    if (status === 'connecting') {
+      // Cancel and reset
+      await stopStreaming();
+      voiceClientRef.current?.stopSession();
+      dispatch(resetVoice());
+      return;
+    }
+
+    // If speaking, interrupt TTS and start listening
     if (status === 'speaking') {
       await audioPlayerRef.current?.stop();
       voiceClientRef.current?.cancelTts();
       dispatch(stopSpeaking());
+      // Start listening again so user can speak
+      await startListeningFlow();
       return;
     }
 
@@ -425,60 +569,9 @@ export function useVoiceMode(): UseVoiceModeResult {
       dispatch(clearVoiceError());
     }
 
-    // Connect if not connected
-    if (!voiceClientRef.current?.isConnected()) {
-      await connect();
-      // Wait a bit for connection to establish
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-
-    // Bug #5 fix - Check if connection succeeded after the delay
-    if (!voiceClientRef.current?.isConnected()) {
-      dispatch(setVoiceError({
-        message: 'Could not connect to voice server. Please try again.',
-        recoverable: true,
-      }));
-      return;
-    }
-
-    // Start voice session and audio streaming
-    // CRITICAL: Must wait for session to be ready before starting audio streaming
-    // Otherwise audio chunks arrive at backend before STT stream is initialized
-    try {
-      dispatch(setVoiceStatus('connecting'));
-
-      // Step 1: Start session and WAIT for backend confirmation
-      // Pass user location for route planning
-      const sessionId = await voiceClientRef.current?.startSessionAsync(
-        undefined,
-        10000,
-        currentLocation ?? undefined,
-      );
-      if (!sessionId) {
-        dispatch(setVoiceError({
-          message: 'Failed to start voice session',
-          recoverable: true,
-        }));
-        return;
-      }
-
-      // Step 2: Session is confirmed ready, NOW start audio streaming
-      const started = await startStreaming();
-      if (!started) {
-        // Clean up the session if streaming failed
-        voiceClientRef.current?.stopSession();
-        dispatch(setVoiceError({
-          message: 'Failed to start audio streaming',
-          recoverable: true,
-        }));
-      }
-    } catch (err) {
-      dispatch(setVoiceError({
-        message: err instanceof Error ? err.message : 'Failed to start recording',
-        recoverable: true,
-      }));
-    }
-  }, [status, connect, dispatch, initializeServices, startStreaming, stopStreaming, currentLocation]);
+    // Normal case: start listening flow
+    await startListeningFlow();
+  }, [status, dispatch, initializeServices, startStreaming, stopStreaming, startListeningFlow]);
 
   /**
    * Handle confirm action
@@ -508,6 +601,19 @@ export function useVoiceMode(): UseVoiceModeResult {
   const reset = useCallback(() => {
     disconnect();
   }, [disconnect]);
+
+  /**
+   * Pre-request microphone permission when voice mode is enabled
+   * This speeds up the mic tap response by avoiding permission dialog during recording
+   */
+  useEffect(() => {
+    if (isVoiceModeEnabled && !hasPermission) {
+      console.log('[useVoiceMode] Pre-requesting microphone permission');
+      requestPermission().then((granted) => {
+        console.log('[useVoiceMode] Pre-request permission result:', granted);
+      });
+    }
+  }, [isVoiceModeEnabled, hasPermission, requestPermission]);
 
   /**
    * Cleanup on unmount

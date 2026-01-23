@@ -30,6 +30,7 @@ export interface AudioPlayerCallbacks {
  */
 interface AudioChunk {
   data: string; // Base64 encoded audio
+  sampleRate: number; // Sample rate for this chunk
   isComplete: boolean;
 }
 
@@ -70,9 +71,12 @@ export class AudioPlayer {
 
   /**
    * Enqueue audio chunk for playback
+   * @param base64Data Base64 encoded audio data
+   * @param sampleRate Sample rate in Hz (default 16000 - matches backend TTS)
+   * @param isComplete Whether this is the final chunk
    */
-  enqueue(base64Data: string, isComplete = false): void {
-    this.queue.push({ data: base64Data, isComplete });
+  enqueue(base64Data: string, sampleRate = 16000, isComplete = false): void {
+    this.queue.push({ data: base64Data, sampleRate, isComplete });
 
     // Start processing if not already
     if (!this.isProcessingQueue) {
@@ -82,13 +86,15 @@ export class AudioPlayer {
 
   /**
    * Play base64 audio directly (for single audio response)
+   * @param base64Data Base64 encoded audio data
+   * @param sampleRate Sample rate in Hz (default 16000 - matches backend TTS)
    */
-  async play(base64Data: string): Promise<void> {
+  async play(base64Data: string, sampleRate = 16000): Promise<void> {
     // Clear queue and stop current playback
     await this.stop();
 
     // Enqueue and play
-    this.enqueue(base64Data, true);
+    this.enqueue(base64Data, sampleRate, true);
   }
 
   /**
@@ -192,7 +198,7 @@ export class AudioPlayer {
       const chunk = this.queue.shift();
       if (!chunk) break;
 
-      await this.playChunk(chunk.data);
+      await this.playChunk(chunk.data, chunk.sampleRate);
 
       // Check again after async operation
       if (this.stopRequested) {
@@ -215,12 +221,14 @@ export class AudioPlayer {
 
   /**
    * Play a single audio chunk
+   * @param base64Data Base64 encoded audio data
+   * @param sampleRate Sample rate in Hz for WAV header creation
    */
-  private async playChunk(base64Data: string): Promise<void> {
+  private async playChunk(base64Data: string, sampleRate = 16000): Promise<void> {
     return new Promise(async (resolve) => {
       try {
-        // Create data URI from base64
-        const uri = this.createAudioUri(base64Data);
+        // Create data URI from base64 with correct sample rate
+        const uri = this.createAudioUri(base64Data, sampleRate);
 
         // Unload previous sound if exists
         if (this.sound) {
@@ -267,8 +275,10 @@ export class AudioPlayer {
   /**
    * Create audio URI from base64 data
    * Adds WAV header if raw PCM data is detected
+   * @param base64Data Base64 encoded audio data
+   * @param sampleRate Sample rate in Hz for WAV header (default 16000 - matches backend TTS)
    */
-  private createAudioUri(base64Data: string): string {
+  private createAudioUri(base64Data: string, sampleRate = 16000): string {
     // Check if already has data URI prefix
     if (base64Data.startsWith('data:')) {
       return base64Data;
@@ -288,8 +298,8 @@ export class AudioPlayer {
       return `data:audio/wav;base64,${base64Data}`;
     }
 
-    // Add WAV header for raw PCM data
-    const wavBase64 = this.addWavHeader(binaryString, 24000); // TTS uses 24kHz
+    // Add WAV header for raw PCM data with correct sample rate
+    const wavBase64 = this.addWavHeader(binaryString, sampleRate);
     return `data:audio/wav;base64,${wavBase64}`;
   }
 
