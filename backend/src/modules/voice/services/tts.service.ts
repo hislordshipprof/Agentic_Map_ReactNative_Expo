@@ -38,8 +38,8 @@ export interface TtsResult {
 
 const DEFAULT_TTS_CONFIG: TtsConfig = {
   languageCode: VoiceDefaults.LANGUAGE_CODE,
-  voiceName: 'en-US-Neural2-J', // Natural-sounding neural voice
-  ssmlGender: 'NEUTRAL',
+  voiceName: 'en-US-Neural2-J', // Natural-sounding neural voice (male)
+  // Note: ssmlGender omitted - when voiceName is specified, voice determines gender
   speakingRate: 1.0,
   pitch: 0.0,
   audioEncoding: VoiceDefaults.AUDIO_ENCODING,
@@ -107,13 +107,27 @@ export class TtsService implements OnModuleInit {
       ...config,
     };
 
+    // Build voice config - only include ssmlGender if voiceName is not specified
+    // When a specific voice is used (e.g., Neural2-J), it has inherent gender
+    const voiceConfig: {
+      languageCode: string;
+      name?: string;
+      ssmlGender?: 'MALE' | 'FEMALE' | 'NEUTRAL';
+    } = {
+      languageCode: ttsConfig.languageCode,
+    };
+
+    if (ttsConfig.voiceName) {
+      voiceConfig.name = ttsConfig.voiceName;
+      // Don't set ssmlGender when using a named voice
+    } else if (ttsConfig.ssmlGender) {
+      // Only use ssmlGender when no specific voice is selected
+      voiceConfig.ssmlGender = this.mapSsmlGender(ttsConfig.ssmlGender);
+    }
+
     const request: ISynthesizeSpeechRequest = {
       input: { text },
-      voice: {
-        languageCode: ttsConfig.languageCode,
-        name: ttsConfig.voiceName,
-        ssmlGender: this.mapSsmlGender(ttsConfig.ssmlGender),
-      },
+      voice: voiceConfig,
       audioConfig: {
         audioEncoding: this.mapAudioEncoding(ttsConfig.audioEncoding),
         sampleRateHertz: ttsConfig.sampleRateHertz,
@@ -162,13 +176,24 @@ export class TtsService implements OnModuleInit {
       ...config,
     };
 
+    // Build voice config - only include ssmlGender if voiceName is not specified
+    const voiceConfig: {
+      languageCode: string;
+      name?: string;
+      ssmlGender?: 'MALE' | 'FEMALE' | 'NEUTRAL';
+    } = {
+      languageCode: ttsConfig.languageCode,
+    };
+
+    if (ttsConfig.voiceName) {
+      voiceConfig.name = ttsConfig.voiceName;
+    } else if (ttsConfig.ssmlGender) {
+      voiceConfig.ssmlGender = this.mapSsmlGender(ttsConfig.ssmlGender);
+    }
+
     const request: ISynthesizeSpeechRequest = {
       input: { ssml },
-      voice: {
-        languageCode: ttsConfig.languageCode,
-        name: ttsConfig.voiceName,
-        ssmlGender: this.mapSsmlGender(ttsConfig.ssmlGender),
-      },
+      voice: voiceConfig,
       audioConfig: {
         audioEncoding: this.mapAudioEncoding(ttsConfig.audioEncoding),
         sampleRateHertz: ttsConfig.sampleRateHertz,

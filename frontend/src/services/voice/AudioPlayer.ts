@@ -9,7 +9,6 @@
  */
 
 import { Audio, AVPlaybackStatus } from 'expo-av';
-import { Platform } from 'react-native';
 
 /**
  * Playback state
@@ -267,17 +266,69 @@ export class AudioPlayer {
 
   /**
    * Create audio URI from base64 data
+   * Adds WAV header if raw PCM data is detected
    */
   private createAudioUri(base64Data: string): string {
-    // Determine MIME type based on platform
-    const mimeType = Platform.OS === 'web' ? 'audio/webm' : 'audio/wav';
-
     // Check if already has data URI prefix
     if (base64Data.startsWith('data:')) {
       return base64Data;
     }
 
-    return `data:${mimeType};base64,${base64Data}`;
+    // Decode to check for WAV header
+    const binaryString = atob(base64Data);
+
+    // Check if already has WAV header (starts with "RIFF")
+    const hasWavHeader = binaryString.length >= 4 &&
+      binaryString.charCodeAt(0) === 0x52 && // R
+      binaryString.charCodeAt(1) === 0x49 && // I
+      binaryString.charCodeAt(2) === 0x46 && // F
+      binaryString.charCodeAt(3) === 0x46;   // F
+
+    if (hasWavHeader) {
+      return `data:audio/wav;base64,${base64Data}`;
+    }
+
+    // Add WAV header for raw PCM data
+    const wavBase64 = this.addWavHeader(binaryString, 24000); // TTS uses 24kHz
+    return `data:audio/wav;base64,${wavBase64}`;
+  }
+
+  /**
+   * Add WAV header to raw PCM data
+   */
+  private addWavHeader(pcmData: string, sampleRate: number): string {
+    const dataLength = pcmData.length;
+    const header = new ArrayBuffer(44);
+    const view = new DataView(header);
+
+    // "RIFF" chunk
+    view.setUint32(0, 0x52494646, false); // "RIFF"
+    view.setUint32(4, 36 + dataLength, true); // file size - 8
+    view.setUint32(8, 0x57415645, false); // "WAVE"
+
+    // "fmt " sub-chunk
+    view.setUint32(12, 0x666d7420, false); // "fmt "
+    view.setUint32(16, 16, true); // subchunk size
+    view.setUint16(20, 1, true); // audio format (PCM)
+    view.setUint16(22, 1, true); // num channels (mono)
+    view.setUint32(24, sampleRate, true); // sample rate
+    view.setUint32(28, sampleRate * 2, true); // byte rate
+    view.setUint16(32, 2, true); // block align
+    view.setUint16(34, 16, true); // bits per sample
+
+    // "data" sub-chunk
+    view.setUint32(36, 0x64617461, false); // "data"
+    view.setUint32(40, dataLength, true); // data size
+
+    // Combine header and PCM data
+    const headerBytes = new Uint8Array(header);
+    let binary = '';
+    for (let i = 0; i < headerBytes.length; i++) {
+      binary += String.fromCharCode(headerBytes[i]);
+    }
+    binary += pcmData;
+
+    return btoa(binary);
   }
 
   /**

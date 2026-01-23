@@ -141,31 +141,65 @@ export function useAudioStream(
 
   /**
    * Handle audio stream data
+   * Sends audio data to backend (WAV header stripping handled on backend)
    */
   const handleAudioStream = useCallback(async (event: AudioDataEvent) => {
     try {
       let base64Data: string;
+      let dataType = 'unknown';
 
-      // Convert data to base64 if needed
+      // Convert data to base64 - backend handles WAV header stripping
       if (typeof event.data === 'string') {
-        base64Data = event.data;
+        // Check if this looks like base64 (no file paths or other string data)
+        const isLikelyBase64 = /^[A-Za-z0-9+/]+=*$/.test(event.data.slice(0, 100));
+        if (isLikelyBase64) {
+          // Already base64 encoded - pass through
+          base64Data = event.data;
+          dataType = 'string-base64';
+        } else {
+          // Not base64 - might be a file path or error, skip
+          console.warn('[AudioStream] Received non-base64 string data:', event.data.substring(0, 50));
+          return;
+        }
       } else if (event.data instanceof ArrayBuffer) {
         base64Data = arrayBufferToBase64(event.data);
-      } else if (event.data instanceof Float32Array) {
-        // Convert Float32Array to base64 (slice to ensure we get a proper ArrayBuffer)
-        const buffer = event.data.buffer.slice(
-          event.data.byteOffset,
-          event.data.byteOffset + event.data.byteLength
+        dataType = 'ArrayBuffer';
+      } else if (event.data instanceof Uint8Array) {
+        base64Data = arrayBufferToBase64(
+          event.data.buffer.slice(
+            event.data.byteOffset,
+            event.data.byteOffset + event.data.byteLength
+          )
         );
-        base64Data = arrayBufferToBase64(buffer as ArrayBuffer);
+        dataType = 'Uint8Array';
+      } else if (event.data instanceof Float32Array) {
+        // Float32Array needs conversion to Int16 for LINEAR16 format
+        const int16Data = new Int16Array(event.data.length);
+        for (let i = 0; i < event.data.length; i++) {
+          // Convert float [-1, 1] to int16 [-32768, 32767]
+          const s = Math.max(-1, Math.min(1, event.data[i]));
+          int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        base64Data = arrayBufferToBase64(int16Data.buffer);
+        dataType = 'Float32Array';
       } else {
         // Fallback: try to use as-is
         base64Data = String(event.data);
+        dataType = 'fallback';
       }
 
-      // Increment sequence number and send chunk
-      sequenceNumberRef.current += 1;
-      callbacksRef.current.onAudioChunk?.(base64Data, sequenceNumberRef.current);
+      // Only send if we have data
+      if (base64Data && base64Data.length > 0) {
+        // Increment sequence number and send chunk
+        sequenceNumberRef.current += 1;
+
+        // Log first few chunks for debugging
+        if (sequenceNumberRef.current <= 3) {
+          console.log(`[AudioStream] Chunk #${sequenceNumberRef.current}: type=${dataType}, base64Length=${base64Data.length}, first20chars=${base64Data.substring(0, 20)}`);
+        }
+
+        callbacksRef.current.onAudioChunk?.(base64Data, sequenceNumberRef.current);
+      }
     } catch (error) {
       callbacksRef.current.onError?.(
         error instanceof Error ? error : new Error('Failed to process audio chunk')
@@ -196,20 +230,27 @@ export function useAudioStream(
    * Start audio streaming
    */
   const startStreaming = useCallback(async (): Promise<boolean> => {
+    console.log('[AudioStreamRecorder] startStreaming called');
+
     // Check permission first
     if (!hasPermissionRef.current) {
+      console.log('[AudioStreamRecorder] Requesting permission...');
       const granted = await requestPermission();
       if (!granted) {
+        console.log('[AudioStreamRecorder] Permission denied');
         return false;
       }
+      console.log('[AudioStreamRecorder] Permission granted');
     }
 
     try {
       // Reset sequence number
       sequenceNumberRef.current = 0;
+      console.log('[AudioStreamRecorder] Starting recording with config:', mergedConfig);
 
       // Configure recording for streaming
       // Cast sample rate and channels to the expected literal types
+      // Note: expo-audio-studio requires primary output to be enabled for streaming to work
       const recordingConfig: RecordingConfig = {
         sampleRate: mergedConfig.sampleRate as 16000 | 44100 | 48000,
         channels: mergedConfig.channels as 1 | 2,
@@ -218,10 +259,11 @@ export function useAudioStream(
         enableProcessing: true, // Enable for audio level analysis
         keepAwake: true, // Keep device awake during recording
 
-        // Disable file output - we only want streaming
+        // Enable primary output - required for streaming to work
+        // The WAV header will be stripped in handleAudioStream
         output: {
           primary: {
-            enabled: false, // Don't save WAV file
+            enabled: true, // Must be enabled for expo-audio-studio streaming
           },
           compressed: {
             enabled: false,
@@ -242,6 +284,7 @@ export function useAudioStream(
       };
 
       await startRecording(recordingConfig);
+      console.log('[AudioStreamRecorder] Recording started successfully');
       callbacksRef.current.onRecordingStart?.();
       return true;
     } catch (error) {

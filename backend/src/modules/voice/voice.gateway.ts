@@ -108,7 +108,7 @@ export class VoiceGateway
   @SubscribeMessage(ClientEvents.START_SESSION)
   handleStartSession(
     @ConnectedSocket() client: Socket,
-    @MessageBody() dto: StartSessionDto,
+    @MessageBody() dto: StartSessionDto & { userLocation?: { lat: number; lng: number } },
   ): void {
     // Check if client already has a session
     const existingSessionId = this.socketToSession.get(client.id);
@@ -143,6 +143,12 @@ export class VoiceGateway
         sampleRateHertz: config.sampleRateHertz,
         audioEncoding: config.audioEncoding,
       });
+
+      // Pass user location to pipeline for route planning
+      if (dto.userLocation) {
+        this.audioPipeline.setUserLocation(sessionId, dto.userLocation);
+        this.logger.log(`User location set for session: ${sessionId}`);
+      }
     }
 
     const response: SessionStartedEvent = {
@@ -163,8 +169,14 @@ export class VoiceGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() dto: AudioChunkDto,
   ): Promise<void> {
+    // Log at INFO level for first few chunks to verify receipt
+    if (!dto.sequenceNumber || dto.sequenceNumber < 3) {
+      this.logger.log(`Audio chunk received: sessionId=${dto.sessionId}, seq=${dto.sequenceNumber}, size=${dto.audioData?.length || 0}`);
+    }
+
     const session = this.sessions.get(dto.sessionId);
     if (!session) {
+      this.logger.warn(`Audio chunk for unknown session: ${dto.sessionId}`);
       this.emitError(client, dto.sessionId || 'unknown', 'SESSION_NOT_FOUND', 'Voice session not found', false);
       return;
     }
@@ -188,7 +200,7 @@ export class VoiceGateway
       await this.audioPipeline.processAudioChunk(dto.sessionId, dto.audioData);
     }
 
-    this.logger.debug(`Audio chunk received: session=${session.id}, seq=${dto.sequenceNumber}, size=${dto.audioData.length}`);
+    this.logger.debug(`Audio chunk processed: session=${session.id}, seq=${dto.sequenceNumber}, bufferSize=${session.audioBuffer.length}`);
   }
 
   /**
@@ -341,10 +353,25 @@ export class VoiceGateway
    */
   sendToSession(sessionId: string, event: string, data: unknown): boolean {
     const session = this.sessions.get(sessionId);
-    if (!session) return false;
+    if (!session) {
+      this.logger.warn(`sendToSession failed: session not found: ${sessionId}`);
+      return false;
+    }
 
-    const socket = this.server.sockets.sockets.get(session.socketId);
-    if (!socket) return false;
+    // In NestJS WebSocket Gateway with namespace, this.server IS the namespace
+    // Access sockets map directly (cast needed due to type mismatch in Socket.IO types)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const socketsMap = (this.server as any)?.sockets as Map<string, Socket> | undefined;
+    const socket = socketsMap?.get(session.socketId);
+    if (!socket) {
+      this.logger.warn(`sendToSession failed: socket not found for session: ${sessionId}, socketId: ${session.socketId}`);
+      return false;
+    }
+
+    // Log interim transcript events for debugging
+    if (event === ServerEvents.INTERIM_TRANSCRIPT || event === ServerEvents.SPEECH_END) {
+      this.logger.debug(`sendToSession: event=${event}, sessionId=${sessionId}`);
+    }
 
     socket.emit(event, data);
     return true;

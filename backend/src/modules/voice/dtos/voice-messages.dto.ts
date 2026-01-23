@@ -110,6 +110,15 @@ export interface SpeechStartEvent {
 }
 
 /**
+ * Server → Client: VAD detected speech end (silence)
+ * Frontend should stop recording when this is received
+ */
+export interface SpeechEndEvent {
+  sessionId: string;
+  timestamp: number;
+}
+
+/**
  * Server → Client: Interim transcript (while speaking)
  */
 export interface InterimTranscriptEvent {
@@ -193,13 +202,39 @@ export const ClientEvents = {
 export const ServerEvents = {
   SESSION_STARTED: 'voice:session_started',
   SPEECH_START: 'voice:speech_start',
+  SPEECH_END: 'voice:speech_end',
   INTERIM_TRANSCRIPT: 'voice:interim_transcript',
   FINAL_TRANSCRIPT: 'voice:final_transcript',
   NLU_RESULT: 'voice:nlu_result',
+  ROUTE_PLANNED: 'voice:route_planned',
   TTS_AUDIO: 'voice:tts_audio',
   STATE_CHANGE: 'voice:state_change',
   ERROR: 'voice:error',
 } as const;
+
+/**
+ * Server → Client: Route planned from voice navigation intent
+ */
+export interface RoutePlannedEvent {
+  sessionId: string;
+  route: {
+    id: string;
+    origin: { name: string; location: { lat: number; lng: number } };
+    destination: { name: string; location: { lat: number; lng: number } };
+    stops: Array<{
+      id: string;
+      name: string;
+      location: { lat: number; lng: number };
+      detourCost: number;
+      order: number;
+    }>;
+    totalDistance: number;
+    totalTime: number;
+    polyline: string;
+  };
+  summary: string;
+  warnings?: Array<{ stopName: string; message: string; detourMinutes: number }>;
+}
 
 /**
  * Voice configuration defaults

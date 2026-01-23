@@ -10,6 +10,7 @@
  */
 
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import type { Route } from '@/types/route';
 
 /**
  * Voice session states
@@ -72,6 +73,9 @@ export interface VoiceState {
 
   /** Timestamp of last activity */
   lastActivityAt: number | null;
+
+  /** Route planned from voice navigation (before confirmation) */
+  voiceRoute: Route | null;
 }
 
 /**
@@ -93,6 +97,7 @@ const initialState: VoiceState = {
   nluConfidence: null,
   requiresConfirmation: false,
   lastActivityAt: null,
+  voiceRoute: null,
 };
 
 /**
@@ -232,6 +237,23 @@ const voiceSlice = createSlice({
     },
 
     /**
+     * Set voice route (from voice navigation before confirmation)
+     */
+    setVoiceRoute: (state, action: PayloadAction<Route>) => {
+      state.voiceRoute = action.payload;
+      state.pendingRouteId = action.payload.id;
+      state.status = 'confirming';
+      state.lastActivityAt = Date.now();
+    },
+
+    /**
+     * Clear voice route
+     */
+    clearVoiceRoute: (state) => {
+      state.voiceRoute = null;
+    },
+
+    /**
      * Set suggested response (TTS text)
      */
     setSuggestedResponse: (state, action: PayloadAction<string | null>) => {
@@ -281,6 +303,7 @@ const voiceSlice = createSlice({
       state.error = null;
       state.pendingRouteId = null;
       state.suggestedResponse = null;
+      state.voiceRoute = null;
       state.lastActivityAt = Date.now();
     },
 
@@ -359,6 +382,8 @@ export const {
   setVoiceError,
   clearVoiceError,
   setPendingRouteId,
+  setVoiceRoute,
+  clearVoiceRoute,
   setSuggestedResponse,
   setNluConfidence,
   setRequiresConfirmation,

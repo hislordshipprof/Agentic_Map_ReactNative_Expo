@@ -45,13 +45,6 @@ export {
   type LoadingOptions,
 } from './useLoadingState';
 
-// Voice input hook (hold-to-talk STT)
-export {
-  useVoiceInput,
-  type UseVoiceInputOptions,
-  type UseVoiceInputResult,
-} from './useVoiceInput';
-
 // Voice mode hook (full voice flow orchestration)
 export {
   useVoiceMode,

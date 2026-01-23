@@ -13,7 +13,6 @@ import {
   ScrollView,
   StatusBar,
   Pressable,
-  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -24,7 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 // Components
 import { AnimatedMessage } from '@/components/Conversation';
 import type { Message } from '@/components/Conversation';
-import { useRoute, useNLUFlow, useLocation, useVoiceInput, useVoiceMode } from '@/hooks';
+import { useRoute, useNLUFlow, useLocation, useVoiceMode } from '@/hooks';
 import { VoiceMicButton, VoiceStatusIndicator, CircularWaveform } from '@/components/Voice';
 import {
   GlassCard,
@@ -159,16 +158,16 @@ export default function ConversationScreen(): JSX.Element {
     audioLevel,
     isVoiceModeEnabled,
     suggestedResponse,
+    voiceRoute,
     toggleVoice,
     handleMicPress,
-    handleConfirm: handleVoiceConfirm,
+    handleConfirm: handleVoiceConfirmBase,
     handleReject: handleVoiceReject,
   } = useVoiceMode();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [processingPhase, setProcessingPhase] = useState<'idle' | 'understanding' | 'planning_route'>('idle');
-  const [isRecording, setIsRecording] = useState(false);
   const navigateDoneRef = useRef(false);
   const escalationInProgressRef = useRef(false);
 
@@ -322,42 +321,23 @@ export default function ConversationScreen(): JSX.Element {
     doNavigate(entities, currentLocation);
   }, [confirmCurrentIntent, doNavigate, entities, currentLocation]);
 
-  const voiceInput = useVoiceInput({
-    onResult: useCallback(
-      (transcript: string) => {
-        setIsRecording(false);
-        if (transcript.trim().length > 0) handleSend(transcript);
-      },
-      [handleSend]
-    ),
-    onError: useCallback(
-      (error: string) => {
-        setIsRecording(false);
-        appendSystem(error || 'Voice input failed. Try again.');
-      },
-      [appendSystem]
-    ),
-    onPermissionDenied: useCallback(() => {
-      setIsRecording(false);
-      appendSystem('Microphone access is needed for voice input.');
-    }, [appendSystem]),
-  });
+  // Voice confirm with navigation to route screen
+  const handleVoiceConfirm = useCallback(() => {
+    handleVoiceConfirmBase();
+    // Navigate to route screen if we have a voice route
+    if (voiceRoute) {
+      router.push('/(tabs)/route');
+    }
+  }, [handleVoiceConfirmBase, voiceRoute, router]);
 
-  const handleVoicePress = useCallback(async () => {
-    setIsRecording(true);
-    await voiceInput.start();
-  }, [voiceInput]);
+  // Voice press in text mode now just toggles to voice mode
+  const handleVoicePress = useCallback(() => {
+    toggleVoice();
+  }, [toggleVoice]);
 
-  const handleVoiceRelease = useCallback(async () => {
-    await voiceInput.stop();
-  }, [voiceInput]);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'background' && isRecording) voiceInput.stop();
-    });
-    return () => sub.remove();
-  }, [isRecording, voiceInput.stop]);
+  const handleVoiceRelease = useCallback(() => {
+    // No-op - voice mode handles this now
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -384,7 +364,7 @@ export default function ConversationScreen(): JSX.Element {
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         {/* Header - Large greeting like screenshot */}
         <Animated.View entering={FadeInDown.delay(100).duration(600)} style={styles.header}>
-          <Text style={styles.greeting}>Hi there!</Text>
+          <Text style={styles.greeting}>Hi there..!</Text>
           <Text style={styles.question}>How can I help you?</Text>
           <Text style={styles.assistantReady}>Your smart assistant is ready</Text>
           <View style={styles.locationPill}>
@@ -576,7 +556,6 @@ export default function ConversationScreen(): JSX.Element {
               onVoicePress={handleVoicePress}
               onVoiceRelease={handleVoiceRelease}
               isLoading={isLoading}
-              isRecording={isRecording}
               showVoiceButton
               placeholder="Type a message..."
             />

@@ -11,6 +11,7 @@
 
 import { Module, OnModuleInit } from '@nestjs/common';
 import { NluModule } from '../nlu/nlu.module';
+import { ErrandModule } from '../errand/errand.module';
 import { VoiceGateway } from './voice.gateway';
 import { VadService } from './services/vad.service';
 import { SttService } from './services/stt.service';
@@ -20,6 +21,7 @@ import { AudioPipelineService } from './services/audio-pipeline.service';
 @Module({
   imports: [
     NluModule, // For processing transcribed text
+    ErrandModule, // For route planning from voice navigation intents
   ],
   providers: [
     VoiceGateway,

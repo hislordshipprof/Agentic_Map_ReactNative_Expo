@@ -24,6 +24,7 @@ import {
   setVoiceError,
   clearVoiceError,
   handleNluResult,
+  setVoiceRoute,
   startListening,
   stopListening,
   startSpeaking,
@@ -33,16 +34,20 @@ import {
   resetVoice,
   type VoiceStatus,
 } from '@/redux/slices/voiceSlice';
+import { setPendingRoute } from '@/redux/slices/routeSlice';
 import {
   VoiceClient,
   getVoiceClient,
   resetVoiceClient,
   type TranscriptEvent,
   type NluResultEvent,
+  type RoutePlannedEvent,
   type TtsAudioEvent,
   type StateChangeEvent,
   type VoiceErrorEvent,
 } from '@/services/voice/VoiceClient';
+import { useLocation } from './useLocation';
+import type { Route, RouteStop } from '@/types/route';
 import { useAudioStream } from '@/services/voice/AudioStreamRecorder';
 import {
   AudioPlayer,
@@ -90,6 +95,8 @@ export interface UseVoiceModeResult {
   suggestedResponse: string | null;
   /** Whether confirmation is required */
   requiresConfirmation: boolean;
+  /** Route planned from voice navigation (before confirmation) */
+  voiceRoute: Route | null;
   /** Toggle voice mode on/off */
   toggleVoice: () => void;
   /** Handle mic button press */
@@ -110,6 +117,9 @@ export interface UseVoiceModeResult {
 export function useVoiceMode(): UseVoiceModeResult {
   const dispatch = useDispatch<AppDispatch>();
 
+  // Get current location for route planning
+  const { currentLocation } = useLocation();
+
   // Select voice state from Redux
   const {
     status,
@@ -123,6 +133,7 @@ export function useVoiceMode(): UseVoiceModeResult {
     isRecoverable,
     suggestedResponse,
     requiresConfirmation,
+    voiceRoute,
   } = useSelector((state: RootState) => state.voice);
 
   // Refs for services (initialized lazily)
@@ -132,6 +143,7 @@ export function useVoiceMode(): UseVoiceModeResult {
   const wasStreamingBeforeDisconnect = useRef(false); // Track if streaming was active before disconnect
   const statusRef = useRef(status); // Ref to track current status for callbacks
   const isStreamingRef = useRef(false); // Ref to track streaming state for callbacks
+  const stopStreamingRef = useRef<(() => Promise<void>) | null>(null); // Ref to stopStreaming function
 
   // Keep refs in sync with state
   statusRef.current = status;
@@ -140,7 +152,11 @@ export function useVoiceMode(): UseVoiceModeResult {
    * Audio stream callbacks - memoized to prevent re-renders
    */
   const audioStreamCallbacks = useMemo(() => ({
-    onAudioChunk: (base64Data: string, _sequenceNumber: number) => {
+    onAudioChunk: (base64Data: string, sequenceNumber: number) => {
+      // Debug: Log callback invocation
+      if (sequenceNumber <= 3) {
+        console.log(`[useVoiceMode] onAudioChunk called: seq=${sequenceNumber}, hasClient=${!!voiceClientRef.current}, dataLen=${base64Data.length}`);
+      }
       // Stream audio to backend via WebSocket
       voiceClientRef.current?.sendAudio(base64Data);
     },
@@ -183,8 +199,9 @@ export function useVoiceMode(): UseVoiceModeResult {
     intervalMs: 100,
   });
 
-  // Keep isStreamingRef in sync with isStreaming (for callbacks)
+  // Keep refs in sync with hook values (for callbacks to avoid stale closures)
   isStreamingRef.current = isStreaming;
+  stopStreamingRef.current = stopStreaming;
 
   /**
    * Initialize services with callbacks
@@ -228,10 +245,20 @@ export function useVoiceMode(): UseVoiceModeResult {
         dispatch(startListening());
       },
       onInterimTranscript: (event: TranscriptEvent) => {
+        console.log(`[useVoiceMode] Interim transcript received: "${event.transcript}"`);
         dispatch(setPartialTranscript(event.transcript));
       },
       onFinalTranscript: (event: TranscriptEvent) => {
         dispatch(setTranscript(event.transcript));
+        dispatch(stopListening());
+      },
+      onSpeechEnd: async () => {
+        // VAD detected end of speech - stop audio streaming automatically
+        console.log('[useVoiceMode] Speech end detected, stopping audio streaming');
+        // Use stopStreamingRef to avoid stale closure issues
+        if (stopStreamingRef.current) {
+          await stopStreamingRef.current();
+        }
         dispatch(stopListening());
       },
       onNluResult: (event: NluResultEvent) => {
@@ -241,6 +268,35 @@ export function useVoiceMode(): UseVoiceModeResult {
           requiresConfirmation: event.requiresConfirmation,
           suggestedResponse: event.suggestedResponse,
         }));
+      },
+      onRoutePlanned: (event: RoutePlannedEvent) => {
+        console.log('[useVoiceMode] Route planned, converting to Route type');
+        // Convert backend route format to frontend Route type
+        const route: Route = {
+          id: event.route.id,
+          origin: event.route.origin,
+          destination: event.route.destination,
+          stops: event.route.stops.map((s): RouteStop => ({
+            id: s.id,
+            name: s.name,
+            location: s.location,
+            mileMarker: 0, // Will be calculated by route display
+            detourCost: s.detourCost,
+            status: 'MINIMAL', // Default status
+            order: s.order,
+          })),
+          waypoints: [], // Will be populated by route display
+          legs: [], // Will be populated by route display
+          totalDistance: event.route.totalDistance,
+          totalTime: event.route.totalTime,
+          polyline: event.route.polyline,
+          detourBudget: { total: 0, used: 0, remaining: 0 },
+          createdAt: Date.now(),
+        };
+        // Set route in voice slice for confirmation UI
+        dispatch(setVoiceRoute(route));
+        // Also set as pending route for map display
+        dispatch(setPendingRoute(route));
       },
       onTtsAudio: (event: TtsAudioEvent) => {
         dispatch(startSpeaking());
@@ -315,16 +371,18 @@ export function useVoiceMode(): UseVoiceModeResult {
 
   /**
    * Disconnect from voice gateway
+   * Note: Use isStreamingRef instead of isStreaming to avoid callback recreation
+   * when streaming state changes (which would cause unwanted side effects)
    */
   const disconnect = useCallback(async () => {
-    // Stop streaming if active
-    if (isStreaming) {
+    // Stop streaming if active (use ref to avoid dependency on isStreaming)
+    if (isStreamingRef.current) {
       await stopStreaming();
     }
     voiceClientRef.current?.disconnect();
     audioPlayerRef.current?.cleanup();
     dispatch(resetVoice());
-  }, [dispatch, isStreaming, stopStreaming]);
+  }, [dispatch, stopStreaming]);
 
   /**
    * Toggle voice mode
@@ -338,12 +396,14 @@ export function useVoiceMode(): UseVoiceModeResult {
 
   /**
    * Handle mic button press
+   * Note: Use isStreamingRef instead of isStreaming to avoid callback recreation
    */
   const handleMicPress = useCallback(async () => {
     initializeServices();
 
     // If currently listening/streaming, stop (Bug #3 fix - proper sequence)
-    if (status === 'listening' || isStreaming) {
+    // Use ref to avoid dependency on isStreaming which causes callback recreation
+    if (status === 'listening' || isStreamingRef.current) {
       // First stop streaming completely
       await stopStreaming();
       // Then signal end of speech to backend (after streaming is stopped)
@@ -382,10 +442,31 @@ export function useVoiceMode(): UseVoiceModeResult {
     }
 
     // Start voice session and audio streaming
+    // CRITICAL: Must wait for session to be ready before starting audio streaming
+    // Otherwise audio chunks arrive at backend before STT stream is initialized
     try {
-      voiceClientRef.current?.startSession();
+      dispatch(setVoiceStatus('connecting'));
+
+      // Step 1: Start session and WAIT for backend confirmation
+      // Pass user location for route planning
+      const sessionId = await voiceClientRef.current?.startSessionAsync(
+        undefined,
+        10000,
+        currentLocation ?? undefined,
+      );
+      if (!sessionId) {
+        dispatch(setVoiceError({
+          message: 'Failed to start voice session',
+          recoverable: true,
+        }));
+        return;
+      }
+
+      // Step 2: Session is confirmed ready, NOW start audio streaming
       const started = await startStreaming();
       if (!started) {
+        // Clean up the session if streaming failed
+        voiceClientRef.current?.stopSession();
         dispatch(setVoiceError({
           message: 'Failed to start audio streaming',
           recoverable: true,
@@ -397,7 +478,7 @@ export function useVoiceMode(): UseVoiceModeResult {
         recoverable: true,
       }));
     }
-  }, [status, isStreaming, connect, dispatch, initializeServices, startStreaming, stopStreaming]);
+  }, [status, connect, dispatch, initializeServices, startStreaming, stopStreaming, currentLocation]);
 
   /**
    * Handle confirm action
@@ -453,6 +534,7 @@ export function useVoiceMode(): UseVoiceModeResult {
     isRecoverable,
     suggestedResponse,
     requiresConfirmation,
+    voiceRoute,
     toggleVoice,
     handleMicPress,
     handleConfirm,
