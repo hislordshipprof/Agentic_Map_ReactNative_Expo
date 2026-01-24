@@ -83,6 +83,8 @@ Thumbs.db
 # Logs
 logs/
 *.log
+backenderror.md
+frontendlog.md
 
 # Temporary files
 tmp/
