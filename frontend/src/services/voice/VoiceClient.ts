@@ -19,7 +19,7 @@ export type VoiceSessionState = 'idle' | 'listening' | 'processing' | 'speaking'
 /**
  * Audio encoding formats
  */
-export type AudioEncoding = 'LINEAR16' | 'WEBM_OPUS' | 'OGG_OPUS';
+export type AudioEncoding = 'LINEAR16' | 'WEBM_OPUS' | 'OGG_OPUS' | 'MP3';
 
 /**
  * Session configuration
@@ -110,6 +110,30 @@ export interface RoutePlannedEvent {
 }
 
 /**
+ * Clarification needed event data (from agentic system)
+ */
+export interface ClarificationNeededEvent {
+  sessionId: string;
+  question: string;
+  options?: string[];
+  context?: {
+    ambiguousEntity?: string;
+    relatedIntent?: string;
+  };
+  timestamp: number;
+}
+
+/**
+ * Tool executing event data (for agent transparency)
+ */
+export interface ToolExecutingEvent {
+  sessionId: string;
+  tool: string;
+  description: string;
+  timestamp: number;
+}
+
+/**
  * Voice client event callbacks
  */
 export interface VoiceClientCallbacks {
@@ -126,6 +150,8 @@ export interface VoiceClientCallbacks {
   onStateChange?: (event: StateChangeEvent) => void;
   onError?: (event: VoiceErrorEvent) => void;
   onProcessingInterrupted?: (timestamp: number) => void; // Barge-in acknowledged by server
+  onClarificationNeeded?: (event: ClarificationNeededEvent) => void; // Agent needs user input
+  onToolExecuting?: (event: ToolExecutingEvent) => void; // Agent executing a tool
 }
 
 /**
@@ -155,6 +181,8 @@ const ServerEvents = {
   STATE_CHANGE: 'voice:state_change',
   ERROR: 'voice:error',
   PROCESSING_INTERRUPTED: 'voice:processing_interrupted', // Barge-in acknowledged
+  CLARIFICATION_NEEDED: 'voice:clarification_needed', // Agent needs user input
+  TOOL_EXECUTING: 'voice:tool_executing', // Agent executing a tool
 } as const;
 
 /**
@@ -574,6 +602,18 @@ export class VoiceClient {
     }) => {
       console.log('[VoiceClient] Processing interrupted (barge-in acknowledged)');
       this.callbacks.onProcessingInterrupted?.(data.timestamp);
+    });
+
+    // Clarification needed (agent asking follow-up question)
+    this.socket.on(ServerEvents.CLARIFICATION_NEEDED, (data: ClarificationNeededEvent) => {
+      console.log(`[VoiceClient] Clarification needed: "${data.question}"`);
+      this.callbacks.onClarificationNeeded?.(data);
+    });
+
+    // Tool executing (for agent transparency)
+    this.socket.on(ServerEvents.TOOL_EXECUTING, (data: ToolExecutingEvent) => {
+      console.log(`[VoiceClient] Tool executing: ${data.tool} - ${data.description}`);
+      this.callbacks.onToolExecuting?.(data);
     });
   }
 }

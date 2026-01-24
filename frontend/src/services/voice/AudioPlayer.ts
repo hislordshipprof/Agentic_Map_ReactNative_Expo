@@ -6,9 +6,11 @@
  * - Queued playback (chunks arrive sequentially)
  * - Immediate interrupt (for user speaking during TTS)
  * - Playback state tracking
+ * - File-based playback for better performance on mobile
  */
 
 import { Audio, AVPlaybackStatus } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 
 /**
  * Playback state
@@ -31,7 +33,16 @@ export interface AudioPlayerCallbacks {
 interface AudioChunk {
   data: string; // Base64 encoded audio
   sampleRate: number; // Sample rate for this chunk
+  encoding: string; // Audio encoding (MP3, LINEAR16, etc.)
   isComplete: boolean;
+}
+
+/**
+ * Temp file for cleanup tracking
+ */
+interface TempAudioFile {
+  uri: string;
+  createdAt: number;
 }
 
 /**
@@ -45,6 +56,8 @@ export class AudioPlayer {
   private isPlaying = false;
   private isProcessingQueue = false;
   private stopRequested = false; // Flag to signal stop during queue processing
+  private tempFiles: TempAudioFile[] = []; // Track temp files for cleanup
+  private readonly MAX_TEMP_FILES = 5; // Keep last 5 files to avoid rapid cleanup during playback
 
   constructor(callbacks: AudioPlayerCallbacks = {}) {
     this.callbacks = callbacks;
@@ -61,6 +74,9 @@ export class AudioPlayer {
         staysActiveInBackground: false,
         shouldDuckAndroid: true,
         playThroughEarpieceAndroid: false,
+        // Optimize for voice playback
+        interruptionModeIOS: 1, // DO_NOT_MIX - gives us audio focus
+        interruptionModeAndroid: 1, // DO_NOT_MIX
       });
     } catch (error) {
       this.callbacks.onPlaybackError?.(
@@ -72,11 +88,12 @@ export class AudioPlayer {
   /**
    * Enqueue audio chunk for playback
    * @param base64Data Base64 encoded audio data
-   * @param sampleRate Sample rate in Hz (default 16000 - matches backend TTS)
+   * @param sampleRate Sample rate in Hz (default 24000 for TTS)
+   * @param encoding Audio encoding format (default 'MP3')
    * @param isComplete Whether this is the final chunk
    */
-  enqueue(base64Data: string, sampleRate = 16000, isComplete = false): void {
-    this.queue.push({ data: base64Data, sampleRate, isComplete });
+  enqueue(base64Data: string, sampleRate = 24000, encoding = 'MP3', isComplete = false): void {
+    this.queue.push({ data: base64Data, sampleRate, encoding, isComplete });
 
     // Start processing if not already
     if (!this.isProcessingQueue) {
@@ -87,14 +104,15 @@ export class AudioPlayer {
   /**
    * Play base64 audio directly (for single audio response)
    * @param base64Data Base64 encoded audio data
-   * @param sampleRate Sample rate in Hz (default 16000 - matches backend TTS)
+   * @param sampleRate Sample rate in Hz (default 24000 for TTS)
+   * @param encoding Audio encoding format (default 'MP3')
    */
-  async play(base64Data: string, sampleRate = 16000): Promise<void> {
+  async play(base64Data: string, sampleRate = 24000, encoding = 'MP3'): Promise<void> {
     // Clear queue and stop current playback
     await this.stop();
 
     // Enqueue and play
-    this.enqueue(base64Data, sampleRate, true);
+    this.enqueue(base64Data, sampleRate, encoding, true);
   }
 
   /**
@@ -198,7 +216,7 @@ export class AudioPlayer {
       const chunk = this.queue.shift();
       if (!chunk) break;
 
-      await this.playChunk(chunk.data, chunk.sampleRate);
+      await this.playChunk(chunk.data, chunk.sampleRate, chunk.encoding);
 
       // Check again after async operation
       if (this.stopRequested) {
@@ -222,23 +240,29 @@ export class AudioPlayer {
   /**
    * Play a single audio chunk
    * @param base64Data Base64 encoded audio data
-   * @param sampleRate Sample rate in Hz for WAV header creation
+   * @param sampleRate Sample rate in Hz for WAV header creation (only for raw PCM)
+   * @param encoding Audio encoding format
    */
-  private async playChunk(base64Data: string, sampleRate = 16000): Promise<void> {
+  private async playChunk(base64Data: string, sampleRate = 24000, encoding = 'MP3'): Promise<void> {
     return new Promise(async (resolve) => {
       try {
-        // Create data URI from base64 with correct sample rate
-        const uri = this.createAudioUri(base64Data, sampleRate);
+        // Create audio file URI for better mobile performance
+        const uri = await this.createAudioFileUri(base64Data, sampleRate, encoding);
 
         // Unload previous sound if exists
         if (this.sound) {
           await this.sound.unloadAsync();
         }
 
-        // Create and load new sound
+        // Create and load new sound with buffer ahead for smoother playback
         const { sound } = await Audio.Sound.createAsync(
           { uri },
-          { shouldPlay: true },
+          {
+            shouldPlay: true,
+            progressUpdateIntervalMillis: 100,
+            // Pre-buffer audio for smoother playback
+            androidImplementation: 'MediaPlayer',
+          },
           this.onPlaybackStatusUpdate.bind(this, resolve)
         );
 
@@ -273,34 +297,101 @@ export class AudioPlayer {
   }
 
   /**
-   * Create audio URI from base64 data
-   * Adds WAV header if raw PCM data is detected
+   * Create audio file URI from base64 data
+   * Writes to a temp file for better mobile playback performance
    * @param base64Data Base64 encoded audio data
-   * @param sampleRate Sample rate in Hz for WAV header (default 16000 - matches backend TTS)
+   * @param sampleRate Sample rate in Hz for WAV header (only used for raw PCM)
+   * @param encoding Audio encoding format (default 'MP3')
    */
-  private createAudioUri(base64Data: string, sampleRate = 16000): string {
-    // Check if already has data URI prefix
+  private async createAudioFileUri(
+    base64Data: string,
+    sampleRate = 24000,
+    encoding = 'MP3'
+  ): Promise<string> {
+    // Check if already has data URI prefix - extract base64 part
+    let audioBase64 = base64Data;
     if (base64Data.startsWith('data:')) {
-      return base64Data;
+      const commaIndex = base64Data.indexOf(',');
+      if (commaIndex !== -1) {
+        audioBase64 = base64Data.substring(commaIndex + 1);
+      }
     }
 
-    // Decode to check for WAV header
-    const binaryString = atob(base64Data);
+    // Determine file extension and processing based on encoding
+    let finalBase64 = audioBase64;
+    let fileExtension = 'mp3';
 
-    // Check if already has WAV header (starts with "RIFF")
-    const hasWavHeader = binaryString.length >= 4 &&
+    // Check audio format by looking at magic bytes
+    const binaryString = atob(audioBase64);
+
+    // Check for MP3 (starts with ID3 or 0xFF 0xFB/0xFA/0xF3)
+    const isMp3 = (binaryString.length >= 3 && binaryString.substring(0, 3) === 'ID3') ||
+      (binaryString.length >= 2 && binaryString.charCodeAt(0) === 0xFF &&
+        (binaryString.charCodeAt(1) & 0xE0) === 0xE0);
+
+    // Check for WAV (RIFF header)
+    const isWav = binaryString.length >= 4 &&
       binaryString.charCodeAt(0) === 0x52 && // R
       binaryString.charCodeAt(1) === 0x49 && // I
       binaryString.charCodeAt(2) === 0x46 && // F
       binaryString.charCodeAt(3) === 0x46;   // F
 
-    if (hasWavHeader) {
-      return `data:audio/wav;base64,${base64Data}`;
+    // Check for OGG (OggS header)
+    const isOgg = binaryString.length >= 4 &&
+      binaryString.charCodeAt(0) === 0x4F && // O
+      binaryString.charCodeAt(1) === 0x67 && // g
+      binaryString.charCodeAt(2) === 0x67 && // g
+      binaryString.charCodeAt(3) === 0x53;   // S
+
+    if (isMp3) {
+      fileExtension = 'mp3';
+      // MP3 is self-contained, no processing needed
+    } else if (isWav) {
+      fileExtension = 'wav';
+      // WAV is self-contained, no processing needed
+    } else if (isOgg) {
+      fileExtension = 'ogg';
+      // OGG is self-contained, no processing needed
+    } else if (encoding === 'LINEAR16' || encoding === 'pcm') {
+      // Raw PCM needs WAV header
+      fileExtension = 'wav';
+      finalBase64 = this.addWavHeader(binaryString, sampleRate);
+    } else {
+      // Default to MP3 extension for unknown formats
+      fileExtension = 'mp3';
     }
 
-    // Add WAV header for raw PCM data with correct sample rate
-    const wavBase64 = this.addWavHeader(binaryString, sampleRate);
-    return `data:audio/wav;base64,${wavBase64}`;
+    // Write to temp file for better playback performance
+    const filename = `tts_audio_${Date.now()}.${fileExtension}`;
+    const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+
+    await FileSystem.writeAsStringAsync(fileUri, finalBase64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    // Track temp file for cleanup
+    this.tempFiles.push({ uri: fileUri, createdAt: Date.now() });
+
+    // Clean up old temp files (keep last MAX_TEMP_FILES)
+    this.cleanupOldTempFiles();
+
+    return fileUri;
+  }
+
+  /**
+   * Clean up old temporary audio files
+   */
+  private async cleanupOldTempFiles(): Promise<void> {
+    while (this.tempFiles.length > this.MAX_TEMP_FILES) {
+      const oldFile = this.tempFiles.shift();
+      if (oldFile) {
+        try {
+          await FileSystem.deleteAsync(oldFile.uri, { idempotent: true });
+        } catch {
+          // Ignore deletion errors - file may not exist
+        }
+      }
+    }
   }
 
   /**
@@ -356,6 +447,16 @@ export class AudioPlayer {
    */
   async cleanup(): Promise<void> {
     await this.stop();
+
+    // Clean up all temp files
+    for (const file of this.tempFiles) {
+      try {
+        await FileSystem.deleteAsync(file.uri, { idempotent: true });
+      } catch {
+        // Ignore deletion errors
+      }
+    }
+    this.tempFiles = [];
   }
 }
 

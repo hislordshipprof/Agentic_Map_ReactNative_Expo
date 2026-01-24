@@ -26,6 +26,19 @@ export type VoiceStatus =
   | 'error';      // Error state
 
 /**
+ * Pending clarification from agent
+ */
+export interface PendingClarification {
+  question: string;
+  options?: string[];
+  context?: {
+    ambiguousEntity?: string;
+    relatedIntent?: string;
+  };
+  timestamp: number;
+}
+
+/**
  * Voice state interface
  */
 export interface VoiceState {
@@ -76,6 +89,12 @@ export interface VoiceState {
 
   /** Route planned from voice navigation (before confirmation) */
   voiceRoute: Route | null;
+
+  /** Pending clarification question from agent */
+  pendingClarification: PendingClarification | null;
+
+  /** Currently executing tool (for UI feedback) */
+  currentTool: { name: string; description: string } | null;
 }
 
 /**
@@ -98,6 +117,8 @@ const initialState: VoiceState = {
   requiresConfirmation: false,
   lastActivityAt: null,
   voiceRoute: null,
+  pendingClarification: null,
+  currentTool: null,
 };
 
 /**
@@ -367,6 +388,36 @@ const voiceSlice = createSlice({
       Object.assign(state, initialState);
       state.lastActivityAt = Date.now();
     },
+
+    /**
+     * Set pending clarification (agent asking a follow-up question)
+     */
+    setPendingClarification: (
+      state,
+      action: PayloadAction<PendingClarification | null>
+    ) => {
+      state.pendingClarification = action.payload;
+      if (action.payload) {
+        state.lastActivityAt = Date.now();
+      }
+    },
+
+    /**
+     * Clear pending clarification (after user responds)
+     */
+    clearPendingClarification: (state) => {
+      state.pendingClarification = null;
+    },
+
+    /**
+     * Set currently executing tool (for UI feedback)
+     */
+    setCurrentTool: (
+      state,
+      action: PayloadAction<{ name: string; description: string } | null>
+    ) => {
+      state.currentTool = action.payload;
+    },
   },
 });
 
@@ -395,6 +446,9 @@ export const {
   confirmAction,
   rejectAction,
   resetVoice,
+  setPendingClarification,
+  clearPendingClarification,
+  setCurrentTool,
 } = voiceSlice.actions;
 
 export default voiceSlice.reducer;

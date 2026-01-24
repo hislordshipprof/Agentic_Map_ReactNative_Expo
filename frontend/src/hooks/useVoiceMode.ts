@@ -32,6 +32,8 @@ import {
   confirmAction,
   rejectAction,
   resetVoice,
+  setPendingClarification,
+  setCurrentTool,
   type VoiceStatus,
 } from '@/redux/slices/voiceSlice';
 import { setPendingRoute } from '@/redux/slices/routeSlice';
@@ -45,6 +47,8 @@ import {
   type TtsAudioEvent,
   type StateChangeEvent,
   type VoiceErrorEvent,
+  type ClarificationNeededEvent,
+  type ToolExecutingEvent,
 } from '@/services/voice/VoiceClient';
 import { useLocation } from './useLocation';
 import type { Route, RouteStop } from '@/types/route';
@@ -320,8 +324,8 @@ export function useVoiceMode(): UseVoiceModeResult {
       },
       onTtsAudio: (event: TtsAudioEvent) => {
         dispatch(startSpeaking());
-        // Pass sample rate from TTS event to ensure correct playback speed
-        audioPlayerRef.current?.play(event.audioData, event.sampleRateHertz);
+        // Pass sample rate and encoding from TTS event for correct playback
+        audioPlayerRef.current?.play(event.audioData, event.sampleRateHertz, event.encoding);
       },
       onStateChange: (event: StateChangeEvent) => {
         // Map backend state to frontend VoiceStatus
@@ -348,6 +352,24 @@ export function useVoiceMode(): UseVoiceModeResult {
         dispatch(startListening());
         // Reset VAD state for new utterance detection
         resetVadStateRef.current?.();
+      },
+      onClarificationNeeded: (event: ClarificationNeededEvent) => {
+        // Agent is asking a follow-up question
+        console.log(`[useVoiceMode] Clarification needed: "${event.question}"`);
+        dispatch(setPendingClarification({
+          question: event.question,
+          options: event.options,
+          context: event.context,
+          timestamp: event.timestamp,
+        }));
+      },
+      onToolExecuting: (event: ToolExecutingEvent) => {
+        // Agent is executing a tool - show in UI for transparency
+        console.log(`[useVoiceMode] Tool executing: ${event.tool}`);
+        dispatch(setCurrentTool({
+          name: event.tool,
+          description: event.description,
+        }));
       },
     });
 
