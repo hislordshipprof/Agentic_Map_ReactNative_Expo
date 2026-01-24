@@ -33,6 +33,11 @@ node_modules/
 *.mobileprovision
 *.keystore
 
+# Google Cloud Service Account Credentials
+gen-lang-client-*.json
+*-credentials.json
+service-account*.json
+
 # Expo
 .expo/
 dist/

@@ -20,6 +20,7 @@ import { Provider } from 'react-redux';
 import { store } from '@/redux/store';
 import { LoadingOverlay, ErrorDialog } from '@/components/Common';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ElevenLabsVoiceProvider } from '@/providers/ElevenLabsVoiceProvider';
 import { QueryClient, onlineManager, focusManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
@@ -116,22 +117,24 @@ export default function RootLayout(): JSX.Element {
           }}
         >
           <Provider store={store}>
-            <View style={{ flex: 1 }}>
-              <StatusBar style="auto" />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                }}
-              >
-                <Stack.Screen name="index" options={{ headerShown: false }} />
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-                <Stack.Screen name="auth" options={{ headerShown: false }} />
-                <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
-                <Stack.Screen name="+not-found" />
-              </Stack>
-              <LoadingOverlay fullScreen />
-            </View>
+            <ElevenLabsVoiceProvider>
+              <View style={{ flex: 1 }}>
+                <StatusBar style="auto" />
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                  }}
+                >
+                  <Stack.Screen name="index" options={{ headerShown: false }} />
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+                  <Stack.Screen name="auth" options={{ headerShown: false }} />
+                  <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
+                  <Stack.Screen name="+not-found" />
+                </Stack>
+                <LoadingOverlay fullScreen />
+              </View>
+            </ElevenLabsVoiceProvider>
             <ErrorDialog />
           </Provider>
         </PersistQueryClientProvider>

@@ -50,3 +50,19 @@ export {
   useVoiceMode,
   type UseVoiceModeResult,
 } from './useVoiceMode';
+
+// ElevenLabs voice hook (WebRTC-based, ultra-low latency)
+export { useElevenLabsVoice } from './useElevenLabsVoice';
+
+// Unified voice hook (switches between legacy and ElevenLabs)
+export {
+  useUnifiedVoice,
+  type UseUnifiedVoiceResult,
+} from './useUnifiedVoice';
+
+// User anchors hook (home, work, etc.)
+export {
+  useUserAnchors,
+  type UseUserAnchorsResult,
+  type AnchorCoordinates,
+} from './useUserAnchors';
