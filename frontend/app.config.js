@@ -60,6 +60,8 @@ module.exports = {
       "expo-secure-store",
       "expo-font",
       "@siteed/expo-audio-studio",
+      "@livekit/react-native-expo-plugin",
+      "@config-plugins/react-native-webrtc",
       "./plugins/withGoogleMapsApiKeyPlaceholder",
     ],
     experiments: {

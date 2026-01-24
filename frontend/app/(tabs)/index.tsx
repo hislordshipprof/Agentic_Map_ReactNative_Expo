@@ -23,7 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 // Components
 import { AnimatedMessage } from '@/components/Conversation';
 import type { Message } from '@/components/Conversation';
-import { useRoute, useNLUFlow, useLocation, useVoiceMode } from '@/hooks';
+import { useRoute, useNLUFlow, useLocation, useUnifiedVoice } from '@/hooks';
 import { VoiceMicButton, VoiceStatusIndicator, CircularWaveform } from '@/components/Voice';
 import {
   GlassCard,
@@ -150,7 +150,7 @@ export default function ConversationScreen(): JSX.Element {
     isFromCache,
   } = useLocation();
 
-  // Voice mode hook
+  // Unified voice hook (supports both legacy WebSocket and ElevenLabs WebRTC)
   const {
     status: voiceStatus,
     transcript: voiceTranscript,
@@ -163,13 +163,21 @@ export default function ConversationScreen(): JSX.Element {
     handleMicPress,
     handleConfirm: handleVoiceConfirmBase,
     handleReject: handleVoiceReject,
-  } = useVoiceMode();
+    voiceBackend,
+  } = useUnifiedVoice();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [processingPhase, setProcessingPhase] = useState<'idle' | 'understanding' | 'planning_route'>('idle');
   const navigateDoneRef = useRef(false);
   const escalationInProgressRef = useRef(false);
+
+  // Log voice backend in dev mode (uses voiceBackend variable)
+  useEffect(() => {
+    if (__DEV__) {
+      console.log(`[ConversationScreen] Voice backend: ${voiceBackend}`);
+    }
+  }, [voiceBackend]);
 
   const appendSystem = useCallback((text: string) => {
     setMessages((prev) => [
