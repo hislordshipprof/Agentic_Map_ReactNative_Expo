@@ -26,6 +26,8 @@ import type {
   GetEtaResponse,
   RouteStop,
   PlaceResult,
+  StopDetail,
+  RouteWarning,
 } from './dtos';
 
 @Injectable()
@@ -42,7 +44,11 @@ export class ElevenLabsToolsService {
    */
   async planRoute(dto: PlanRouteDto): Promise<PlanRouteResponse> {
     const startTime = Date.now();
-    this.logger.log(`[planRoute] Starting: destination="${dto.destination_name}"`);
+    this.logger.log(`[planRoute] ========== START ==========`);
+    this.logger.log(`[planRoute] Destination: "${dto.destination_name}"`);
+    this.logger.log(`[planRoute] Origin: (${dto.user_location_lat}, ${dto.user_location_lng})`);
+    this.logger.log(`[planRoute] Raw stops input: ${JSON.stringify(dto.stops)}`);
+    this.logger.log(`[planRoute] Raw DTO anchors: home=(${dto.home_lat}, ${dto.home_lng}), work=(${dto.work_lat}, ${dto.work_lng})`);
 
     try {
       const origin: Coordinates = {
@@ -52,14 +58,28 @@ export class ElevenLabsToolsService {
 
       // Resolve destination - could be anchor or place name
       const destination = this.resolveDestination(dto);
+      this.logger.log(`[planRoute] Resolved destination: "${destination.name}" at (${destination.location?.lat}, ${destination.location?.lng})`);
+
+      // Check if anchor needs setup
+      if (destination.needsSetup) {
+        const anchorType = destination.needsSetup;
+        this.logger.warn(`[planRoute] Anchor "${anchorType}" not configured - returning setup prompt`);
+        return {
+          success: false,
+          error: `${anchorType}_not_configured`,
+          user_message: `I don't have your ${anchorType} address saved yet. Could you tell me where ${anchorType} is, or give me a specific address?`,
+        };
+      }
 
       // Build anchors from dynamic variables
       const anchors = this.buildAnchors(dto);
+      this.logger.log(`[planRoute] Anchors: ${anchors.map(a => `${a.name}(${a.location.lat},${a.location.lng})`).join(', ') || 'none'}`);
 
       // Build stops array from comma-separated or array input
       const stops = this.parseStops(dto.stops);
+      this.logger.log(`[planRoute] Parsed stops (${stops.length}): ${JSON.stringify(stops)}`);
 
-      // Call errand service
+      // Call errand service with voiceMode for faster response (single route option)
       const input: NavigateWithStopsIn = {
         origin,
         destination: {
@@ -68,25 +88,81 @@ export class ElevenLabsToolsService {
         },
         stops: stops.map(name => ({ name })),
         anchors,
+        voiceMode: true, // Skip alternatives to reduce latency for voice interactions
       };
 
+      this.logger.log(`[planRoute] Calling ErrandService.navigateWithStops (voice mode)...`);
       const result = await this.errandService.navigateWithStops(input);
       const processingTime = Date.now() - startTime;
 
-      this.logger.log(
-        `[planRoute] Completed in ${processingTime}ms: ` +
-        `stops=${result.route.stops?.length || 0}, time=${result.route.totalTime}min`
-      );
+      // Log detailed results
+      this.logger.log(`[planRoute] ========== RESULTS ==========`);
+      this.logger.log(`[planRoute] Processing time: ${processingTime}ms`);
+      this.logger.log(`[planRoute] Route ID: ${result.route.id}`);
+      this.logger.log(`[planRoute] Total: ${result.route.totalTime}min, ${result.route.totalDistance}mi`);
+      this.logger.log(`[planRoute] Stops found: ${result.route.stops?.length || 0}`);
+
+      // Log each stop with details
+      if (result.route.stops && result.route.stops.length > 0) {
+        result.route.stops.forEach((stop, i) => {
+          this.logger.log(`[planRoute]   Stop ${i + 1}: "${stop.name}" at (${stop.location.lat}, ${stop.location.lng}), detour=${stop.detourCost}m, status=${stop.status}`);
+        });
+      }
+
+      // Log excluded stops
+      if (result.excludedStops && result.excludedStops.length > 0) {
+        this.logger.warn(`[planRoute] EXCLUDED stops: ${result.excludedStops.map(s => `"${s.name}" (${s.reason})`).join(', ')}`);
+      }
+
+      // Log warnings
+      if (result.warnings && result.warnings.length > 0) {
+        result.warnings.forEach(w => {
+          this.logger.warn(`[planRoute] WARNING: ${w.stopName} - ${w.message} (${w.detourMinutes}min, ${w.category})`);
+        });
+      }
+
+      this.logger.log(`[planRoute] ========== END ==========`);
+
+      // Get the actual time-based detour from the route option (in minutes, not meters!)
+      // detourCost on stops is in METERS (distance to corridor), not time
+      // extraTimeMin on the route option is the actual time-based detour
+      const clusterExtraTimeMin = result.routeOptions?.[0]?.extraTimeMin ?? 0;
 
       // Transform to ElevenLabs format
+      // For individual stops, estimate time from distance: ~500m/min suburban driving
       const routeStops: RouteStop[] = (result.route.stops || []).map(stop => ({
         id: stop.id,
         name: stop.name,
         lat: stop.location.lat,
         lng: stop.location.lng,
         order: stop.order,
-        detour_minutes: Math.round((stop.detourCost || 0) / 60),
+        detour_minutes: Math.round((stop.detourCost || 0) / 500), // ~500m per minute
       }));
+
+      // Build stop details for voice feedback
+      const stopDetails: StopDetail[] = (result.route.stops || []).map(stop => {
+        // Estimate individual stop detour time from distance (~500m per minute)
+        const detourMinutes = Math.round((stop.detourCost || 0) / 500);
+        return {
+          name: stop.name,
+          status: this.getStopStatus(stop.status),
+          detour_minutes: detourMinutes,
+          detour_description: this.getDetourDescription(detourMinutes),
+          is_open: stop.isOpen,
+          rating: stop.rating,
+        };
+      });
+
+      // Transform warnings
+      const warnings: RouteWarning[] = (result.warnings || []).map(w => ({
+        message: w.message,
+        category: w.category,
+        requires_confirmation: w.category === 'FAR',
+      }));
+
+      // Use the actual time-based cluster detour (extraTimeMin), not distance-based estimates
+      const totalDetourMinutes = Math.round(clusterExtraTimeMin);
+      const detourCategory = this.getDetourCategory(totalDetourMinutes);
 
       const summary = this.generateRouteSummary(
         destination.name,
@@ -110,6 +186,10 @@ export class ElevenLabsToolsService {
           polyline: result.route.polyline,
         },
         summary,
+        stop_details: stopDetails,
+        warnings,
+        total_detour_minutes: totalDetourMinutes,
+        detour_category: detourCategory,
       };
     } catch (error) {
       this.logger.error(`[planRoute] Error:`, error);
@@ -192,21 +272,51 @@ export class ElevenLabsToolsService {
         destination,
         stops: allStops.map(name => ({ name })),
         anchors: [],
+        voiceMode: true, // Skip alternatives for faster voice response
       };
 
       const result = await this.errandService.navigateWithStops(input);
       const processingTime = Date.now() - startTime;
 
-      this.logger.log(`[addStop] Completed in ${processingTime}ms`);
+      this.logger.log(`[addStop] Completed in ${processingTime}ms (voice mode)`);
 
+      // Get the actual time-based detour from the route option (in minutes, not meters!)
+      const clusterExtraTimeMin = result.routeOptions?.[0]?.extraTimeMin ?? 0;
+
+      // For individual stops, estimate time from distance: ~500m/min suburban driving
       const routeStops: RouteStop[] = (result.route.stops || []).map(stop => ({
         id: stop.id,
         name: stop.name,
         lat: stop.location.lat,
         lng: stop.location.lng,
         order: stop.order,
-        detour_minutes: Math.round((stop.detourCost || 0) / 60),
+        detour_minutes: Math.round((stop.detourCost || 0) / 500), // ~500m per minute
       }));
+
+      // Build stop details for voice feedback
+      const stopDetails: StopDetail[] = (result.route.stops || []).map(stop => {
+        // Estimate individual stop detour time from distance (~500m per minute)
+        const detourMinutes = Math.round((stop.detourCost || 0) / 500);
+        return {
+          name: stop.name,
+          status: this.getStopStatus(stop.status),
+          detour_minutes: detourMinutes,
+          detour_description: this.getDetourDescription(detourMinutes),
+          is_open: stop.isOpen,
+          rating: stop.rating,
+        };
+      });
+
+      // Transform warnings
+      const warnings: RouteWarning[] = (result.warnings || []).map(w => ({
+        message: w.message,
+        category: w.category,
+        requires_confirmation: w.category === 'FAR',
+      }));
+
+      // Use the actual time-based cluster detour (extraTimeMin), not distance-based estimates
+      const totalDetourMinutes = Math.round(clusterExtraTimeMin);
+      const detourCategory = this.getDetourCategory(totalDetourMinutes);
 
       const summary = this.generateRouteSummary(
         dto.destination_name,
@@ -230,6 +340,10 @@ export class ElevenLabsToolsService {
           polyline: result.route.polyline,
         },
         summary,
+        stop_details: stopDetails,
+        warnings,
+        total_detour_minutes: totalDetourMinutes,
+        detour_category: detourCategory,
       };
     } catch (error) {
       this.logger.error(`[addStop] Error:`, error);
@@ -264,12 +378,13 @@ export class ElevenLabsToolsService {
         },
         stops: [],
         anchors: [],
+        voiceMode: true, // Skip alternatives for faster voice response
       };
 
       const result = await this.errandService.navigateWithStops(input);
       const processingTime = Date.now() - startTime;
 
-      this.logger.log(`[getEta] Completed in ${processingTime}ms: ${result.route.totalTime}min`);
+      this.logger.log(`[getEta] Completed in ${processingTime}ms (voice mode): ${result.route.totalTime}min`);
 
       const etaMinutes = Math.round(result.route.totalTime);
       const distanceMiles = Number(result.route.totalDistance.toFixed(1));
@@ -291,22 +406,38 @@ export class ElevenLabsToolsService {
    * Resolve destination from DTO
    * Handles "home", "work" anchors or place names
    */
-  private resolveDestination(dto: PlanRouteDto): { name: string; location?: Coordinates } {
+  private resolveDestination(dto: PlanRouteDto): { name: string; location?: Coordinates; needsSetup?: string } {
     const destLower = dto.destination_name.toLowerCase().trim();
 
     // Check for home anchor
-    if (destLower === 'home' && dto.home_lat && dto.home_lng) {
+    if (destLower === 'home') {
+      if (dto.home_lat && dto.home_lng) {
+        return {
+          name: 'Home',
+          location: { lat: dto.home_lat, lng: dto.home_lng },
+        };
+      }
+      // Home requested but not set up
+      this.logger.warn(`[resolveDestination] "home" requested but no home coordinates saved`);
       return {
-        name: 'Home',
-        location: { lat: dto.home_lat, lng: dto.home_lng },
+        name: 'home',
+        needsSetup: 'home',
       };
     }
 
     // Check for work anchor
-    if (destLower === 'work' && dto.work_lat && dto.work_lng) {
+    if (destLower === 'work') {
+      if (dto.work_lat && dto.work_lng) {
+        return {
+          name: 'Work',
+          location: { lat: dto.work_lat, lng: dto.work_lng },
+        };
+      }
+      // Work requested but not set up
+      this.logger.warn(`[resolveDestination] "work" requested but no work coordinates saved`);
       return {
-        name: 'Work',
-        location: { lat: dto.work_lat, lng: dto.work_lng },
+        name: 'work',
+        needsSetup: 'work',
       };
     }
 
@@ -418,5 +549,51 @@ export class ElevenLabsToolsService {
       error: errorMessage,
       user_message: userMessage,
     };
+  }
+
+  /**
+   * Convert backend stop status to voice-friendly status
+   */
+  private getStopStatus(backendStatus: string): 'on_route' | 'small_detour' | 'large_detour' {
+    switch (backendStatus) {
+      case 'NO_DETOUR':
+      case 'MINIMAL':
+        return 'on_route';
+      case 'ACCEPTABLE':
+        return 'small_detour';
+      case 'NOT_RECOMMENDED':
+      default:
+        return 'large_detour';
+    }
+  }
+
+  /**
+   * Generate human-readable detour description for voice
+   */
+  private getDetourDescription(detourMinutes: number): string {
+    if (detourMinutes <= 0) {
+      return 'right on your route';
+    } else if (detourMinutes <= 2) {
+      return 'just a minute off your route';
+    } else if (detourMinutes <= 5) {
+      return `about ${detourMinutes} minutes off your route`;
+    } else if (detourMinutes <= 10) {
+      return `${detourMinutes} minutes out of your way`;
+    } else {
+      return `${detourMinutes} minutes - that's quite a detour`;
+    }
+  }
+
+  /**
+   * Determine overall detour category based on total extra time
+   */
+  private getDetourCategory(totalDetourMinutes: number): 'MINIMAL' | 'SIGNIFICANT' | 'FAR' {
+    if (totalDetourMinutes <= 5) {
+      return 'MINIMAL';
+    } else if (totalDetourMinutes <= 10) {
+      return 'SIGNIFICANT';
+    } else {
+      return 'FAR';
+    }
   }
 }
