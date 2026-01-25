@@ -104,6 +104,27 @@ export interface RouteStop {
 }
 
 /**
+ * Detailed stop info for voice feedback
+ */
+export interface StopDetail {
+  name: string;
+  status: 'on_route' | 'small_detour' | 'large_detour';
+  detour_minutes: number;
+  detour_description: string;
+  is_open?: boolean;
+  rating?: number;
+}
+
+/**
+ * Warning for significant detours
+ */
+export interface RouteWarning {
+  message: string;
+  category: 'MINIMAL' | 'SIGNIFICANT' | 'FAR';
+  requires_confirmation: boolean;
+}
+
+/**
  * Success response for plan_route
  */
 export interface PlanRouteSuccessResponse {
@@ -121,6 +142,14 @@ export interface PlanRouteSuccessResponse {
     polyline: string;
   };
   summary: string;
+  /** Detailed info about each stop for voice feedback */
+  stop_details: StopDetail[];
+  /** Warnings about significant detours */
+  warnings: RouteWarning[];
+  /** Total extra time added by all stops */
+  total_detour_minutes: number;
+  /** Overall detour category: MINIMAL (0-5min), SIGNIFICANT (5-10min), FAR (10+min) */
+  detour_category: 'MINIMAL' | 'SIGNIFICANT' | 'FAR';
 }
 
 /**

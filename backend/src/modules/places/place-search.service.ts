@@ -37,7 +37,22 @@ export class PlaceSearchService {
     const routeContext = options?.destination
       ? { origin: location, destination: options.destination }
       : undefined;
-    const ranked = this.rankCandidates(raw, location, routeContext);
+
+    // Filter out results that are too far from the route segment
+    // Max acceptable distance is 2x the search radius from the route corridor
+    const maxDistanceFromRoute = searchRadius * 2;
+    const filtered = routeContext
+      ? raw.filter(place => {
+          const distToSegment = this.pointToSegmentDistance(
+            place.location,
+            routeContext.origin,
+            routeContext.destination
+          );
+          return distToSegment <= maxDistanceFromRoute;
+        })
+      : raw;
+
+    const ranked = this.rankCandidates(filtered.length > 0 ? filtered : raw, location, routeContext);
     return ranked.slice(0, limit);
   }
 

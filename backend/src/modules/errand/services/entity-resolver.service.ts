@@ -113,9 +113,11 @@ export class EntityResolverService {
   }
 
   /**
-   * Resolve each stop query to the best place within radius (derived from budget).
-   * When context.destination is provided, PlaceSearch uses route-aware search and ranking
-   * (midpoint, corridor radius, proximity-to-segment, forwardness toward destination).
+   * Resolve each stop query to the NEAREST place using tiered radius search.
+   *
+   * Google Text Search ranks by "relevance" (rating + popularity), not distance.
+   * With a large radius, the closest stores may not be in the top results.
+   * Using tiered search (small radius first) ensures we find truly nearby places.
    */
   async resolveStops(
     queries: string[],
@@ -123,25 +125,48 @@ export class EntityResolverService {
     budgetM: number,
     context?: { destination: Coordinates },
   ): Promise<ResolvedStop[]> {
-    // Minimum 5km radius ensures we can find retail stores even on short trips
-    // The ranking algorithm will still prefer closer places on the route
-    const radiusM = Math.max(budgetM * 2, 5000);
-    this.logger.log(`[resolveStops] Resolving ${queries.length} stops with radius=${radiusM}m, budget=${budgetM}m`);
+    this.logger.log(`[resolveStops] Resolving ${queries.length} stops with tiered search, budget=${budgetM}m`);
     if (context?.destination) {
       this.logger.log(`[resolveStops] Route-aware search: origin=(${location.lat},${location.lng}) -> dest=(${context.destination.lat},${context.destination.lng})`);
     }
 
+    // Tiered search: start small to find truly nearby places
+    // Google returns by relevance, not distance - small radius forces nearby results
+    const searchTiers = [
+      { radiusM: 5_000, label: '5km' },   // Tier 1: Very close
+      { radiusM: 15_000, label: '15km' }, // Tier 2: Medium range
+      { radiusM: 30_000, label: '30km' }, // Tier 3: Fallback
+    ];
+
     const out: ResolvedStop[] = [];
     const options = context?.destination ? { destination: context.destination } : undefined;
+
     for (const q of queries) {
       this.logger.log(`[resolveStops] Searching for "${q}"...`);
-      const list = await this.placeSearch.searchPlaces(q, location, radiusM, 1, options);
-      const top = list[0];
-      if (top) {
-        this.logger.log(`[resolveStops]   FOUND: "${top.name}" at (${top.location.lat},${top.location.lng}), rating=${top.rating}, open=${top.isOpen}`);
-        out.push({ query: q, place: top });
-      } else {
-        this.logger.warn(`[resolveStops]   NOT FOUND: No results for "${q}" within ${radiusM}m`);
+      let found = false;
+
+      for (const tier of searchTiers) {
+        // Fetch 10 candidates to sort by distance
+        const list = await this.placeSearch.searchPlaces(q, location, tier.radiusM, 10, options);
+
+        if (list.length > 0) {
+          // Sort by distance from user location and pick the nearest
+          const sorted = [...list].sort((a, b) =>
+            this.haversineM(location, a.location) - this.haversineM(location, b.location)
+          );
+          const nearest = sorted[0];
+          const distKm = (this.haversineM(location, nearest.location) / 1000).toFixed(1);
+
+          this.logger.log(`[resolveStops]   FOUND: ${list.length} "${q}" in ${tier.label}, picked nearest: "${nearest.name}" at ${distKm}km (${nearest.location.lat},${nearest.location.lng})`);
+          out.push({ query: q, place: nearest });
+          found = true;
+          break; // Found in this tier, no need to expand
+        }
+        this.logger.log(`[resolveStops]   No "${q}" in ${tier.label}, expanding...`);
+      }
+
+      if (!found) {
+        this.logger.warn(`[resolveStops]   NOT FOUND: No results for "${q}" in any tier`);
       }
     }
 

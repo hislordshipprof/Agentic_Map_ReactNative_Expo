@@ -67,17 +67,18 @@ export class GooglePlacesService {
   }
 
   /**
-   * Text search for a query near a location.
+   * Text search for a query near a location within a specified radius.
    */
   async textSearch(
     query: string,
     location: Coordinates,
-    _radiusM = 10000,
+    radiusM = 10000,
     limit = 20,
   ): Promise<PlaceCandidate[]> {
     const json = (await this.fetch(`${BASE}/textsearch/json`, {
       query,
       location: `${location.lat},${location.lng}`,
+      radius: String(radiusM),
     })) as { results?: Array<{
       place_id?: string;
       name?: string;
