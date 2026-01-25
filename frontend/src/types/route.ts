@@ -167,7 +167,11 @@ export const getDetourStatus = (
 /**
  * Helper to format distance for display
  */
-export const formatDistance = (miles: number): string => {
+export const formatDistance = (miles: number | undefined | null): string => {
+  // Handle undefined, null, NaN
+  if (miles === undefined || miles === null || isNaN(miles)) {
+    return '0 mi';
+  }
   if (miles < 0.1) {
     const feet = Math.round(miles * 5280);
     return `${feet} ft`;
@@ -178,7 +182,11 @@ export const formatDistance = (miles: number): string => {
 /**
  * Helper to format duration for display
  */
-export const formatDuration = (minutes: number): string => {
+export const formatDuration = (minutes: number | undefined | null): string => {
+  // Handle undefined, null, NaN
+  if (minutes === undefined || minutes === null || isNaN(minutes)) {
+    return '0 min';
+  }
   if (minutes < 60) {
     return `${Math.round(minutes)} min`;
   }

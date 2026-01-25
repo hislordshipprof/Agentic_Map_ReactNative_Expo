@@ -370,6 +370,17 @@ export default function ConversationScreen(): JSX.Element {
       </View>
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
+        {/* Settings Button */}
+        <Animated.View entering={FadeInDown.delay(50).duration(400)} style={styles.settingsRow}>
+          <View style={{ flex: 1 }} />
+          <Pressable
+            style={styles.settingsButton}
+            onPress={() => router.push('/settings' as never)}
+          >
+            <Ionicons name="settings-outline" size={22} color={Colors.dark.text.secondary} />
+          </Pressable>
+        </Animated.View>
+
         {/* Header - Large greeting like screenshot */}
         <Animated.View entering={FadeInDown.delay(100).duration(600)} style={styles.header}>
           <Text style={styles.greeting}>Hi there..!</Text>
@@ -620,9 +631,23 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+  },
+  settingsButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+  },
   header: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
+    paddingTop: Spacing.sm,
     paddingBottom: Spacing.lg,
   },
   greeting: {

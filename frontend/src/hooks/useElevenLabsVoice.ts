@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConversation } from '@elevenlabs/react-native';
 import { useDispatch } from 'react-redux';
+import { router } from 'expo-router';
 import { useLocation } from './useLocation';
 import { useUserAnchors } from './useUserAnchors';
 import {
@@ -35,7 +36,7 @@ import {
   clearConfirmedRoute,
   clearPendingRoute,
 } from '@/redux/slices/routeSlice';
-import type { Route } from '@/types/route';
+import type { Route, RouteStop } from '@/types/route';
 import {
   ElevenLabsVoiceStatus,
   generateSessionId,
@@ -156,16 +157,63 @@ export function useElevenLabsVoice() {
        * Returns a string response for the agent
        */
       display_route: (parameters: unknown): string => {
+        // Define stop object type from ElevenLabs
+        interface ElevenLabsStop {
+          name?: string;
+          lat?: number | string;
+          lng?: number | string;
+          order?: number | string;
+        }
+
         const params = parameters as {
           route_id?: string;
           destination_name?: string;
-          total_time?: number;
-          total_distance?: number;
+          destination_lat?: number | string;
+          destination_lng?: number | string;
+          total_time?: number | string;
+          total_distance?: number | string;
           polyline?: string;
+          stops?: ElevenLabsStop[];
         };
         console.log('[ElevenLabs] display_route called:', params);
 
         try {
+          // Ensure numeric values (ElevenLabs may pass strings)
+          const totalDistance = typeof params.total_distance === 'string'
+            ? parseFloat(params.total_distance)
+            : (params.total_distance || 0);
+          const totalTime = typeof params.total_time === 'string'
+            ? parseFloat(params.total_time)
+            : (params.total_time || 0);
+
+          // Parse stops from agent
+          const stops: RouteStop[] = (params.stops || []).map((stop, index) => {
+            const lat = typeof stop.lat === 'string' ? parseFloat(stop.lat) : (stop.lat || 0);
+            const lng = typeof stop.lng === 'string' ? parseFloat(stop.lng) : (stop.lng || 0);
+            const order = typeof stop.order === 'string' ? parseInt(stop.order, 10) : (stop.order || index + 1);
+
+            return {
+              id: `stop-${index + 1}`,
+              name: stop.name || `Stop ${index + 1}`,
+              location: { lat, lng },
+              mileMarker: 0,
+              detourCost: 0,
+              status: 'MINIMAL' as const,
+              order,
+            };
+          });
+
+          // Sort stops by order
+          stops.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+          // Get destination coordinates (from params or default)
+          const destLat = typeof params.destination_lat === 'string'
+            ? parseFloat(params.destination_lat)
+            : (params.destination_lat || 0);
+          const destLng = typeof params.destination_lng === 'string'
+            ? parseFloat(params.destination_lng)
+            : (params.destination_lng || 0);
+
           // Create route object from params
           const route: Route = {
             id: params.route_id || `route-${Date.now()}`,
@@ -175,22 +223,25 @@ export function useElevenLabsVoice() {
             },
             destination: {
               name: params.destination_name || 'Destination',
-              location: { lat: 0, lng: 0 },
+              location: { lat: destLat, lng: destLng },
             },
-            stops: [],
+            stops,
             waypoints: [],
             legs: [],
-            totalDistance: params.total_distance || 0,
-            totalTime: params.total_time || 0,
+            totalDistance: isNaN(totalDistance) ? 0 : totalDistance,
+            totalTime: isNaN(totalTime) ? 0 : totalTime,
             polyline: params.polyline || '',
-            detourBudget: { total: 0, used: 0, remaining: 0 },
+            detourBudget: { total: 10, used: 0, remaining: 10 },
             createdAt: Date.now(),
           };
 
           dispatch(setVoiceRoute(route));
           dispatch(setPendingRoute(route));
 
-          console.log('[ElevenLabs] Route displayed on map:', route.id);
+          // Navigate to route tab to show the route confirmation screen
+          router.push('/(tabs)/route');
+
+          console.log('[ElevenLabs] Route displayed on map:', route.id, 'with', stops.length, 'stops');
           return 'Route displayed on map successfully';
         } catch (err) {
           console.error('[ElevenLabs] Failed to display route:', err);
@@ -200,6 +251,7 @@ export function useElevenLabsVoice() {
 
       /**
        * Start turn-by-turn navigation
+       * First shows the route summary, then user can tap to start driving
        */
       start_navigation: (parameters: unknown): string => {
         const params = parameters as {
@@ -209,14 +261,18 @@ export function useElevenLabsVoice() {
         console.log('[ElevenLabs] start_navigation called:', params);
 
         try {
-          // Confirm the pending route to start navigation
+          // Confirm the pending route (this marks it as ready)
           dispatch(confirmRoute());
 
-          console.log('[ElevenLabs] Navigation started for route:', params.route_id);
-          return 'Navigation started successfully';
+          // Navigate to the route tab to show the summary screen first
+          // The route tab will show the confirmed route with a "Start Driving" button
+          router.push('/(tabs)/route');
+
+          console.log('[ElevenLabs] Route confirmed, showing summary for:', params.route_id);
+          return 'Route confirmed. Showing route summary - tap Start Driving when ready.';
         } catch (err) {
-          console.error('[ElevenLabs] Failed to start navigation:', err);
-          return 'Failed to start navigation';
+          console.error('[ElevenLabs] Failed to confirm route:', err);
+          return 'Failed to confirm route';
         }
       },
 
@@ -233,6 +289,9 @@ export function useElevenLabsVoice() {
           // Clear the confirmed route
           dispatch(clearConfirmedRoute());
           dispatch(clearPendingRoute());
+
+          // Navigate back to main conversation screen
+          router.replace('/(tabs)');
 
           console.log('[ElevenLabs] Navigation stopped:', params.reason || 'user requested');
           return 'Navigation stopped successfully';
@@ -308,7 +367,7 @@ export function useElevenLabsVoice() {
         dynamicVariables.work_lng = anchorCoordinates.work.lng.toString();
       }
 
-      console.log('[ElevenLabs] Dynamic variables:', Object.keys(dynamicVariables));
+      console.log('[ElevenLabs] Dynamic variables:', JSON.stringify(dynamicVariables, null, 2));
 
       await conversation.startSession({
         agentId,
