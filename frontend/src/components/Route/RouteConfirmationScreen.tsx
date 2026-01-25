@@ -81,7 +81,6 @@ export const RouteConfirmationScreen: React.FC<RouteConfirmationScreenProps> = (
           destination={route.destination}
           stops={route.stops}
           onStopPress={onStopPress}
-          maxHeight={220}
         />
       </Animated.View>
     </ScrollView>

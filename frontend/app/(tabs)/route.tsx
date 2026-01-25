@@ -48,6 +48,13 @@ export default function RouteScreen(): JSX.Element {
   const baseRoute = pending || confirmed;
   const routeWithStops = baseRoute ? { ...baseRoute, stops } : null;
 
+  // Debug logging for stops
+  if (baseRoute) {
+    console.log('[RouteScreen] baseRoute.stops:', baseRoute.stops?.length || 0);
+    console.log('[RouteScreen] Redux stops:', stops?.length || 0);
+    console.log('[RouteScreen] routeWithStops.stops:', routeWithStops?.stops?.length || 0);
+  }
+
   const handleAccept = () => {
     confirm();
     router.push('/navigation' as never);
@@ -192,10 +199,12 @@ export default function RouteScreen(): JSX.Element {
   }
 
   if (baseRoute) {
+    // Use routeWithStops to ensure stops from Redux are properly included
+    const displayRoute = routeWithStops || baseRoute;
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <RouteConfirmationScreen
-          route={baseRoute}
+          route={displayRoute}
           onAccept={handleAccept}
           onAdjust={handleAdjust}
           onCancel={handleCancel}

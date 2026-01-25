@@ -31,9 +31,10 @@ import {
 } from '@/components/Common';
 import { UserInputField } from '@/components/Input';
 import { ConfirmationDialog, AlternativesDialog, DEFAULT_ALTERNATIVES } from '@/components/Dialogs';
+import { RouteOptionsSheet } from '@/components/Route';
 import { errandApi, checkBackendConnectivity } from '@/services/api';
 import type { Entities } from '@/types/nlu';
-import type { Route } from '@/types/route';
+import type { Route, RouteOption } from '@/types/route';
 
 // Theme
 import {
@@ -128,7 +129,15 @@ function entitiesToConfirmation(entities: Entities): { destination?: string; sto
 
 export default function ConversationScreen(): JSX.Element {
   const router = useRouter();
-  const { setPending } = useRoute();
+  const {
+    setPending,
+    routeOptions,
+    showRouteOptions,
+    destinationName: routeDestinationName,
+    setRouteOptions,
+    hideRouteOptionsSheet,
+    selectRouteOption,
+  } = useRoute();
   const {
     flowState,
     intent,
@@ -209,25 +218,42 @@ export default function ConversationScreen(): JSX.Element {
           appendSystem(res.error?.message ?? 'Could not plan the route. Please try again.');
           return;
         }
-        const data = res.data as { route: Route; excludedStops?: unknown[] } | undefined;
+        const data = res.data as {
+          route: Route;
+          routeOptions?: RouteOption[];
+          excludedStops?: unknown[];
+          destination?: { name: string };
+        } | undefined;
         if (!data?.route) {
           navigateDoneRef.current = false;
           appendSystem('No route in response.');
           return;
         }
-        setPending(data.route);
-        const n = data.route.stops?.length ?? 0;
-        const excl = data.excludedStops?.length;
-        appendSystem(
-          `Route ready. ${n} stop${n !== 1 ? 's' : ''}.${excl ? ` Some stops were excluded: ${excl}.` : ''}`
-        );
-        router.push('/(tabs)/route');
+
+        // Check if we have multiple route options
+        if (data.routeOptions && data.routeOptions.length > 1) {
+          // Show route options sheet for user selection
+          setRouteOptions(data.routeOptions, data.destination?.name || ent.destination);
+          const n = data.route.stops?.length ?? 0;
+          appendSystem(
+            `Found ${data.routeOptions.length} route options with ${n} stop${n !== 1 ? 's' : ''}. Please select your preferred route.`
+          );
+        } else {
+          // Single route - proceed directly
+          setPending(data.route);
+          const n = data.route.stops?.length ?? 0;
+          const excl = data.excludedStops?.length;
+          appendSystem(
+            `Route ready. ${n} stop${n !== 1 ? 's' : ''}.${excl ? ` Some stops were excluded: ${excl}.` : ''}`
+          );
+          router.push('/(tabs)/route');
+        }
       } catch (e) {
         navigateDoneRef.current = false;
         appendSystem(e instanceof Error ? e.message : 'Could not plan the route.');
       }
     },
-    [appendSystem, setPending, router]
+    [appendSystem, setPending, setRouteOptions, router]
   );
 
   // HIGH confidence: navigate when we have intent, destination, and location
@@ -337,6 +363,23 @@ export default function ConversationScreen(): JSX.Element {
       router.push('/(tabs)/route');
     }
   }, [handleVoiceConfirmBase, voiceRoute, router]);
+
+  // Route option selection handler
+  const handleRouteOptionSelect = useCallback(
+    (option: RouteOption) => {
+      selectRouteOption(option);
+      appendSystem(
+        `Selected ${option.label}. ${option.stops.length} stop${option.stops.length !== 1 ? 's' : ''} - ${Math.round(option.totalTimeMin)} min total.`
+      );
+      router.push('/(tabs)/route');
+    },
+    [selectRouteOption, appendSystem, router]
+  );
+
+  // Route options dismiss handler
+  const handleRouteOptionsDismiss = useCallback(() => {
+    hideRouteOptionsSheet();
+  }, [hideRouteOptionsSheet]);
 
   // Voice press in text mode now just toggles to voice mode
   const handleVoicePress = useCallback(() => {
@@ -611,6 +654,14 @@ export default function ConversationScreen(): JSX.Element {
         }}
         onRephrase={rejectAndRephrase}
         onDismiss={rejectAndRephrase}
+      />
+
+      <RouteOptionsSheet
+        visible={showRouteOptions}
+        options={routeOptions}
+        onSelect={handleRouteOptionSelect}
+        onDismiss={handleRouteOptionsDismiss}
+        destinationName={routeDestinationName ?? undefined}
       />
     </View>
   );

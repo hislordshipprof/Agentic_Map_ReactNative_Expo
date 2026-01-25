@@ -8,12 +8,24 @@
  */
 
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import type { RouteState, Route, RouteStop } from '@/types';
+import type { RouteState, Route, RouteStop, RouteOption } from '@/types';
+
+/**
+ * Extended route state with route options support
+ */
+interface ExtendedRouteState extends RouteState {
+  /** Available route options for selection */
+  routeOptions: RouteOption[];
+  /** Whether route options sheet should be shown */
+  showRouteOptions: boolean;
+  /** Destination name for display */
+  destinationName: string | null;
+}
 
 /**
  * Initial state
  */
-const initialState: RouteState = {
+const initialState: ExtendedRouteState = {
   confirmed: null,
   pending: null,
   waypoints: [],
@@ -23,6 +35,9 @@ const initialState: RouteState = {
   stops: [],
   isLoading: false,
   error: null,
+  routeOptions: [],
+  showRouteOptions: false,
+  destinationName: null,
 };
 
 /**
@@ -153,6 +168,61 @@ const routeSlice = createSlice({
     updatePolyline: (state, action: PayloadAction<string>) => {
       state.polyline = action.payload;
     },
+
+    /**
+     * Set route options from backend response
+     */
+    setRouteOptions: (
+      state,
+      action: PayloadAction<{
+        options: RouteOption[];
+        destinationName?: string;
+      }>
+    ) => {
+      state.routeOptions = action.payload.options;
+      state.destinationName = action.payload.destinationName ?? null;
+      // Auto-show options if more than 1
+      state.showRouteOptions = action.payload.options.length > 1;
+    },
+
+    /**
+     * Show route options sheet
+     */
+    showRouteOptionsSheet: (state) => {
+      state.showRouteOptions = true;
+    },
+
+    /**
+     * Hide route options sheet
+     */
+    hideRouteOptionsSheet: (state) => {
+      state.showRouteOptions = false;
+    },
+
+    /**
+     * Select a route option and set it as pending
+     */
+    selectRouteOption: (state, action: PayloadAction<RouteOption>) => {
+      const option = action.payload;
+      state.pending = option.route;
+      state.waypoints = option.route.waypoints;
+      state.stops = option.route.stops;
+      state.totalDistance = option.route.totalDistance;
+      state.totalTime = option.route.totalTime;
+      state.polyline = option.route.polyline;
+      state.showRouteOptions = false;
+      state.isLoading = false;
+      state.error = null;
+    },
+
+    /**
+     * Clear route options
+     */
+    clearRouteOptions: (state) => {
+      state.routeOptions = [];
+      state.showRouteOptions = false;
+      state.destinationName = null;
+    },
   },
 });
 
@@ -169,6 +239,11 @@ export const {
   setError,
   updateRouteTotals,
   updatePolyline,
+  setRouteOptions,
+  showRouteOptionsSheet,
+  hideRouteOptionsSheet,
+  selectRouteOption,
+  clearRouteOptions,
 } = routeSlice.actions;
 
 export default routeSlice.reducer;

@@ -6,7 +6,7 @@
  */
 
 import { Entities, Intent, NLUResponse } from './nlu';
-import { Route, RouteStop, LatLng } from './route';
+import { Route, RouteStop, LatLng, RouteOption } from './route';
 import { Anchor, UserPreferences } from './user';
 
 /**
@@ -143,11 +143,27 @@ export interface NavigateWithStopsRequest {
 export interface NavigateWithStopsData {
   route: Route;
   alternatives?: Route[];
+  /** Route options for multi-route selection (cluster-based) */
+  routeOptions?: RouteOption[];
   /** Stops that couldn't fit in budget */
   excludedStops?: Array<{
     name: string;
     reason: string;
     nearestMatch?: RouteStop;
+  }>;
+  /** Destination info */
+  destination?: {
+    name: string;
+    location: LatLng;
+  };
+  /** Direct time without stops */
+  directTimeMin?: number;
+  /** Warnings about detours */
+  warnings?: Array<{
+    stopName: string;
+    message: string;
+    detourMinutes: number;
+    category: string;
   }>;
 }
 

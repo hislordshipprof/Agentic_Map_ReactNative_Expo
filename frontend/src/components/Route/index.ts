@@ -21,3 +21,6 @@ export type { RouteMapProps } from './RouteMap';
 
 export { RouteConfirmationScreen } from './RouteConfirmationScreen';
 export type { RouteConfirmationScreenProps } from './RouteConfirmationScreen';
+
+export { RouteOptionsSheet } from './RouteOptionsSheet';
+export type { RouteOptionsSheetProps } from './RouteOptionsSheet';

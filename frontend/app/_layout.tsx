@@ -17,7 +17,9 @@ import {
 } from '@expo-google-fonts/dm-sans';
 import * as SplashScreen from 'expo-splash-screen';
 import { Provider } from 'react-redux';
-import { store } from '@/redux/store';
+import { PersistGate } from 'redux-persist/integration/react';
+import { store, persistor } from '@/redux/store';
+import { importAnchors } from '@/redux/slices/anchorsSlice';
 import { LoadingOverlay, ErrorDialog } from '@/components/Common';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ElevenLabsVoiceProvider } from '@/providers/ElevenLabsVoiceProvider';
@@ -117,24 +119,52 @@ export default function RootLayout(): JSX.Element {
           }}
         >
           <Provider store={store}>
-            <ElevenLabsVoiceProvider>
-              <View style={{ flex: 1 }}>
-                <StatusBar style="auto" />
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                  }}
-                >
-                  <Stack.Screen name="index" options={{ headerShown: false }} />
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-                  <Stack.Screen name="auth" options={{ headerShown: false }} />
-                  <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
-                  <Stack.Screen name="+not-found" />
-                </Stack>
-                <LoadingOverlay fullScreen />
-              </View>
-            </ElevenLabsVoiceProvider>
+            <PersistGate
+              loading={
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0F1419' }}>
+                  <Text style={{ color: '#fff' }}>Loading...</Text>
+                </View>
+              }
+              persistor={persistor}
+              onBeforeLift={async () => {
+                // Migrate existing anchors from old AsyncStorage key to Redux
+                // This runs once when persist gate lifts
+                try {
+                  const oldKey = '@agentic_map:user_anchors';
+                  const oldData = await AsyncStorage.getItem(oldKey);
+                  if (oldData) {
+                    const anchors = JSON.parse(oldData);
+                    if (Array.isArray(anchors) && anchors.length > 0) {
+                      store.dispatch(importAnchors(anchors));
+                      // Clear old key after successful migration
+                      await AsyncStorage.removeItem(oldKey);
+                      console.log('[Migration] Imported', anchors.length, 'anchors from AsyncStorage to Redux');
+                    }
+                  }
+                } catch (err) {
+                  console.warn('[Migration] Failed to migrate anchors:', err);
+                }
+              }}
+            >
+              <ElevenLabsVoiceProvider>
+                <View style={{ flex: 1 }}>
+                  <StatusBar style="auto" />
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                    }}
+                  >
+                    <Stack.Screen name="index" options={{ headerShown: false }} />
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+                    <Stack.Screen name="auth" options={{ headerShown: false }} />
+                    <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
+                    <Stack.Screen name="+not-found" />
+                  </Stack>
+                  <LoadingOverlay fullScreen />
+                </View>
+              </ElevenLabsVoiceProvider>
+            </PersistGate>
             <ErrorDialog />
           </Provider>
         </PersistQueryClientProvider>

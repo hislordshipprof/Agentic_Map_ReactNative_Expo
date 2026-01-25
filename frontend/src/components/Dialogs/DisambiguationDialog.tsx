@@ -49,6 +49,8 @@ export interface PlaceCandidate {
   id: string;
   name: string;
   address: string;
+  /** Geographic coordinates (optional for disambiguation, required for navigation) */
+  location?: { lat: number; lng: number };
   distance?: number; // in miles
   distanceUnit?: 'mi' | 'km';
   isOpen?: boolean;

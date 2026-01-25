@@ -134,6 +134,36 @@ export interface RouteState {
 }
 
 /**
+ * Route option for multi-route selection
+ * Represents a cluster-based route alternative
+ */
+export interface RouteOption {
+  /** Unique option identifier */
+  id: string;
+  /** Display label (e.g., "Route 1", "Route 2") */
+  label: string;
+  /** Whether this is the recommended option */
+  isRecommended: boolean;
+  /** Total travel time in minutes */
+  totalTimeMin: number;
+  /** Total distance in miles */
+  totalDistanceMi: number;
+  /** Extra time compared to best option */
+  extraTimeMin: number;
+  /** How tightly clustered the stops are (km) */
+  clusterRadiusKm: number;
+  /** Stops in this route option */
+  stops: Array<{
+    name: string;
+    address?: string;
+    location: LatLng;
+    placeId: string;
+  }>;
+  /** Full route data */
+  route: Route;
+}
+
+/**
  * Initial route state
  */
 export const initialRouteState: RouteState = {

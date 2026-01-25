@@ -71,7 +71,7 @@ function mapToVoiceStatus(elStatus: ElevenLabsVoiceStatus): VoiceStatus {
 export function useElevenLabsVoice() {
   const dispatch = useDispatch();
   const { currentLocation } = useLocation();
-  const { coordinates: anchorCoordinates } = useUserAnchors();
+  const { coordinates: anchorCoordinates, isHydrated: anchorsHydrated } = useUserAnchors();
 
   // Local state
   const [status, setStatus] = useState<ElevenLabsVoiceStatus>('idle');
@@ -83,6 +83,25 @@ export function useElevenLabsVoice() {
   // Refs
   const sessionIdRef = useRef<string | null>(null);
   const isStartingRef = useRef(false);
+
+  // Use refs to always access the latest values (avoids stale closure issues)
+  const currentLocationRef = useRef(currentLocation);
+  const anchorCoordinatesRef = useRef(anchorCoordinates);
+  const anchorsHydratedRef = useRef(anchorsHydrated);
+
+  // Keep refs updated with latest values
+  currentLocationRef.current = currentLocation;
+  anchorCoordinatesRef.current = anchorCoordinates;
+  anchorsHydratedRef.current = anchorsHydrated;
+
+  // Debug: Log when anchors change
+  useEffect(() => {
+    console.log('[ElevenLabs] Anchors state updated:', {
+      hydrated: anchorsHydrated,
+      home: anchorCoordinates.home ? `(${anchorCoordinates.home.lat}, ${anchorCoordinates.home.lng})` : 'not set',
+      work: anchorCoordinates.work ? `(${anchorCoordinates.work.lat}, ${anchorCoordinates.work.lng})` : 'not set',
+    });
+  }, [anchorsHydrated, anchorCoordinates]);
 
   // ElevenLabs conversation hook
   const conversation = useConversation({
@@ -158,12 +177,24 @@ export function useElevenLabsVoice() {
        */
       display_route: (parameters: unknown): string => {
         // Define stop object type from ElevenLabs
+        // Backend sends: id, name, lat, lng, order, detour_minutes
         interface ElevenLabsStop {
+          id?: string;
           name?: string;
           lat?: number | string;
           lng?: number | string;
           order?: number | string;
+          detour_minutes?: number | string;
+          status?: 'on_route' | 'small_detour' | 'large_detour';
         }
+
+        // Map backend status to frontend DetourStatus
+        const mapStatus = (status?: string, detourMinutes?: number): 'NO_DETOUR' | 'MINIMAL' | 'ACCEPTABLE' | 'NOT_RECOMMENDED' => {
+          if (status === 'on_route' || detourMinutes === 0) return 'NO_DETOUR';
+          if (status === 'small_detour' || (detourMinutes && detourMinutes <= 3)) return 'MINIMAL';
+          if (status === 'large_detour' || (detourMinutes && detourMinutes > 5)) return 'NOT_RECOMMENDED';
+          return 'ACCEPTABLE';
+        };
 
         const params = parameters as {
           route_id?: string;
@@ -174,8 +205,16 @@ export function useElevenLabsVoice() {
           total_distance?: number | string;
           polyline?: string;
           stops?: ElevenLabsStop[];
+          // Additional fields from backend response
+          stop_details?: Array<{
+            name: string;
+            status: 'on_route' | 'small_detour' | 'large_detour';
+            detour_minutes: number;
+          }>;
+          total_detour_minutes?: number;
+          detour_category?: 'MINIMAL' | 'SIGNIFICANT' | 'FAR';
         };
-        console.log('[ElevenLabs] display_route called:', params);
+        console.log('[ElevenLabs] display_route called:', JSON.stringify(params, null, 2));
 
         try {
           // Ensure numeric values (ElevenLabs may pass strings)
@@ -186,19 +225,47 @@ export function useElevenLabsVoice() {
             ? parseFloat(params.total_time)
             : (params.total_time || 0);
 
+          // Build a map of stop details by name for quick lookup
+          const stopDetailsMap = new Map<string, { status: string; detour_minutes: number }>();
+          if (params.stop_details) {
+            params.stop_details.forEach(detail => {
+              stopDetailsMap.set(detail.name.toLowerCase(), {
+                status: detail.status,
+                detour_minutes: detail.detour_minutes,
+              });
+            });
+          }
+
           // Parse stops from agent
           const stops: RouteStop[] = (params.stops || []).map((stop, index) => {
             const lat = typeof stop.lat === 'string' ? parseFloat(stop.lat) : (stop.lat || 0);
             const lng = typeof stop.lng === 'string' ? parseFloat(stop.lng) : (stop.lng || 0);
             const order = typeof stop.order === 'string' ? parseInt(stop.order, 10) : (stop.order || index + 1);
 
+            // Get detour minutes from stop or stop_details
+            const detourMinutes = typeof stop.detour_minutes === 'string'
+              ? parseFloat(stop.detour_minutes)
+              : (stop.detour_minutes || 0);
+
+            // Try to get detailed info from stop_details map
+            const stopName = stop.name || `Stop ${index + 1}`;
+            const details = stopDetailsMap.get(stopName.toLowerCase());
+            const finalDetourMinutes = details?.detour_minutes ?? detourMinutes;
+
+            // Convert minutes to meters for detourCost (roughly 1 min = 800m at avg speed)
+            // Or use the detour_minutes directly if available
+            const detourCostMeters = finalDetourMinutes * 800;
+
+            // Determine status from stop_details or stop.status or infer from detour
+            const status = mapStatus(details?.status || stop.status, finalDetourMinutes);
+
             return {
-              id: `stop-${index + 1}`,
-              name: stop.name || `Stop ${index + 1}`,
+              id: stop.id || `stop-${index + 1}`,
+              name: stopName,
               location: { lat, lng },
               mileMarker: 0,
-              detourCost: 0,
-              status: 'MINIMAL' as const,
+              detourCost: detourCostMeters,
+              status,
               order,
             };
           });
@@ -335,6 +402,14 @@ export function useElevenLabsVoice() {
     dispatch(setVoiceStatus('connecting'));
     setError(null);
 
+    // With Redux persist + PersistGate, anchors should already be hydrated
+    // This check is a safeguard in case hydration hasn't completed yet
+    if (!anchorsHydratedRef.current) {
+      console.log('[ElevenLabs] Redux not yet hydrated, waiting briefly...');
+      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('[ElevenLabs] After wait - hydrated:', anchorsHydratedRef.current);
+    }
+
     // Generate new session ID
     const newSessionId = generateSessionId();
     sessionIdRef.current = newSessionId;
@@ -345,29 +420,38 @@ export function useElevenLabsVoice() {
 
       // Build dynamic variables for ElevenLabs LLM Server Tools mode
       // These are injected into the agent's system prompt and tool calls
+      // IMPORTANT: Use refs to get latest values, avoiding stale closure issues
+      const location = currentLocationRef.current;
+      const anchors = anchorCoordinatesRef.current;
+
       const dynamicVariables: Record<string, string> = {
         session_id: newSessionId,
       };
 
       // Add current location if available
-      if (currentLocation) {
-        dynamicVariables.user_location_lat = currentLocation.lat.toString();
-        dynamicVariables.user_location_lng = currentLocation.lng.toString();
+      if (location) {
+        dynamicVariables.user_location_lat = location.lat.toString();
+        dynamicVariables.user_location_lng = location.lng.toString();
       }
 
       // Add home anchor if saved
-      if (anchorCoordinates.home) {
-        dynamicVariables.home_lat = anchorCoordinates.home.lat.toString();
-        dynamicVariables.home_lng = anchorCoordinates.home.lng.toString();
+      if (anchors.home) {
+        dynamicVariables.home_lat = anchors.home.lat.toString();
+        dynamicVariables.home_lng = anchors.home.lng.toString();
       }
 
       // Add work anchor if saved
-      if (anchorCoordinates.work) {
-        dynamicVariables.work_lat = anchorCoordinates.work.lat.toString();
-        dynamicVariables.work_lng = anchorCoordinates.work.lng.toString();
+      if (anchors.work) {
+        dynamicVariables.work_lat = anchors.work.lat.toString();
+        dynamicVariables.work_lng = anchors.work.lng.toString();
       }
 
-      console.log('[ElevenLabs] Dynamic variables:', JSON.stringify(dynamicVariables, null, 2));
+      console.log('[ElevenLabs] ========== SESSION START CONTEXT ==========');
+      console.log('[ElevenLabs] Location:', location ? `(${location.lat}, ${location.lng})` : 'NOT AVAILABLE');
+      console.log('[ElevenLabs] Home anchor:', anchors.home ? `(${anchors.home.lat}, ${anchors.home.lng})` : 'NOT SET');
+      console.log('[ElevenLabs] Work anchor:', anchors.work ? `(${anchors.work.lat}, ${anchors.work.lng})` : 'NOT SET');
+      console.log('[ElevenLabs] Dynamic variables being sent:', JSON.stringify(dynamicVariables, null, 2));
+      console.log('[ElevenLabs] ==========================================');
 
       await conversation.startSession({
         agentId,
@@ -386,7 +470,7 @@ export function useElevenLabsVoice() {
       }));
       isStartingRef.current = false;
     }
-  }, [conversation, currentLocation, anchorCoordinates, dispatch]);
+  }, [conversation, dispatch]);
 
   /**
    * End voice session
