@@ -4,12 +4,16 @@
  * Design: larger cards with icon + name + address, plus "See all" header.
  */
 
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useUserAnchors } from '@/hooks';
 import { useThemeColors } from '@/theme/useThemeColors';
 import { FontFamily, FontSize, Spacing } from '@/theme';
+import { AddressInputModal } from '@/components/SavedPlaces';
+import { userApi } from '@/services/api';
+import type { AnchorType } from '@/types/user';
 
 const ANCHOR_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   home: 'home',
@@ -23,28 +27,63 @@ function getAnchorIcon(name: string): keyof typeof Ionicons.glyphMap {
 }
 
 export const SavedPlacesRow: React.FC = () => {
-  const { anchors } = useUserAnchors();
+  const { anchors, setAnchor } = useUserAnchors();
   const colors = useThemeColors();
+  const router = useRouter();
+  const [modalType, setModalType] = useState<AnchorType | null>(null);
 
-  if (anchors.length === 0) return null;
+  const handleAddressSelect = useCallback(
+    async (result: { location: { lat: number; lng: number }; address: string; name: string }) => {
+      const type = modalType;
+      if (!type) return;
+      setModalType(null);
+      await setAnchor(type, result.location, type === 'home' ? 'Home' : 'Work', result.address);
+      try {
+        await userApi.saveAnchor({
+          name: type === 'home' ? 'Home' : 'Work',
+          location: result.location,
+          address: result.address,
+          type,
+        });
+      } catch {
+        // Backend sync failed silently
+      }
+    },
+    [modalType, setAnchor],
+  );
 
   return (
     <View style={styles.container}>
-      {/* Header row */}
+      {/* Header row – always visible so layout matches reference */}
       <View style={styles.headerRow}>
         <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Saved Places</Text>
-        <Pressable>
-          <Text style={[styles.seeAll, { color: colors.primary.teal }]}>See all</Text>
+        <Pressable onPress={() => router.push('/(tabs)/saved')}>
+          <Text style={[styles.seeAll, { color: colors.design.primaryBlue }]}>See all</Text>
         </Pressable>
       </View>
 
-      {/* Cards */}
+      {/* Cards – empty state when no anchors */}
       <ScrollView
         horizontal
-        showsHorizontalScrollIndicator={false}
+        showsHorizontalScrollIndicator={anchors.length > 0}
+        nestedScrollEnabled
         contentContainerStyle={styles.scroll}
       >
-        {anchors.map((anchor) => (
+        {anchors.length === 0 ? (
+          <Pressable
+            onPress={() => setModalType('home')}
+            style={({ pressed }) => [
+              styles.emptyCard,
+              { borderColor: colors.border.light },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Ionicons name="add-circle-outline" size={16} color={colors.primary.teal} />
+            <Text style={[styles.emptyText, { color: colors.primary.teal }]}>
+              Add Home or Work
+            </Text>
+          </Pressable>
+        ) : anchors.map((anchor) => (
           <Pressable
             key={anchor.name}
             style={({ pressed }) => [
@@ -57,11 +96,11 @@ export const SavedPlacesRow: React.FC = () => {
               pressed && styles.cardPressed,
             ]}
           >
-            <View style={[styles.iconCircle, { backgroundColor: `${colors.primary.teal}12` }]}>
+            <View style={[styles.iconCircle, { backgroundColor: `${colors.design.primaryBlue}20` }]}>
               <Ionicons
                 name={getAnchorIcon(anchor.name)}
                 size={18}
-                color={colors.primary.teal}
+                color={colors.design.primaryBlue}
               />
             </View>
             <View style={styles.cardText}>
@@ -83,6 +122,13 @@ export const SavedPlacesRow: React.FC = () => {
           </Pressable>
         ))}
       </ScrollView>
+
+      <AddressInputModal
+        visible={modalType !== null}
+        anchorType={modalType ?? 'home'}
+        onSelect={handleAddressSelect}
+        onClose={() => setModalType(null)}
+      />
     </View>
   );
 };
@@ -147,5 +193,19 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.primary,
     fontSize: FontSize.xs,
     marginTop: 1,
+  },
+  emptyCard: {
+    minWidth: 150,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.sm,
   },
 });

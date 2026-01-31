@@ -56,6 +56,22 @@ const sharedAccent = {
   purpleDark: '#6D28D9',
 } as const;
 
+/**
+ * Design palette from reference UI (Screenshot 2026-01-29 235838):
+ * Neutral Gray #5E5E5E, White #FFFFFF, Soft Pink #FFB8C9/#FFE8EE,
+ * Mint Green #E8FBF3/#5BCBB4, Primary Blue #4A9FF5, Soft Lavender #E8D4F8
+ */
+const sharedDesign = {
+  neutralGray: '#5E5E5E',
+  white: '#FFFFFF',
+  softPink: '#FFB8C9',
+  softPinkLight: '#FFE8EE',
+  mintGreen: '#E8FBF3',
+  mintGreenDark: '#5BCBB4',
+  primaryBlue: '#4A9FF5',
+  softLavender: '#E8D4F8',
+} as const;
+
 // ---------------------------------------------------------------------------
 // Light Palette
 // ---------------------------------------------------------------------------
@@ -66,6 +82,7 @@ export const LightColors = {
   confidence: sharedConfidence,
   map: sharedMap,
   accent: sharedAccent,
+  design: sharedDesign,
 
   background: {
     primary: '#FFFFFF',
@@ -83,7 +100,7 @@ export const LightColors = {
     primary: '#1A2332',
     secondary: '#6B7280',
     tertiary: '#9CA3AF',
-    accent: '#0D9488',
+    accent: '#4A9FF5',
     inverse: '#FFFFFF',
   },
 
@@ -134,6 +151,22 @@ export const LightColors = {
     primary: ['#14B8A6', '#0D9488'] as readonly string[],
     background: ['#FFFFFF', '#F8FAFB'] as readonly string[],
     tealGlow: ['rgba(20, 184, 166, 0.08)', 'transparent'] as readonly string[],
+    /** Soft Pink → Soft Lavender (Skip, Start Talking, CTAs) */
+    cta: ['#FFB8C9', '#E8D4F8'] as readonly string[],
+    /** Mint Green (Voice Assistant / feature card) */
+    cardVoice: ['#E8FBF3', '#5BCBB4'] as readonly string[],
+    /** Soft Lavender (Multi-Stop card) */
+    cardMultiStop: ['#E8D4F8', '#E0D0F0'] as readonly string[],
+    /**
+     * Pastel screen gradient (onboarding / bottom sheet): cool white → lavender → soft pink.
+     * Same as reference UI: vertical, multi-stop, soft and modern.
+     */
+    pastelScreen: {
+      colors: ['#FAFBFD', '#F8F9FC', '#F5F0F8', '#F8E8F0', '#FCE8EE'] as const,
+      locations: [0, 0.2, 0.5, 0.75, 1] as const,
+      start: { x: 0.5, y: 0 } as const,
+      end: { x: 0.5, y: 1 } as const,
+    },
   },
 
   tabBar: {
@@ -161,6 +194,7 @@ export const DarkColors = {
   confidence: sharedConfidence,
   map: sharedMap,
   accent: sharedAccent,
+  design: sharedDesign,
 
   background: {
     primary: '#0F1419',
@@ -229,6 +263,15 @@ export const DarkColors = {
     primary: ['#14B8A6', '#0D9488'] as readonly string[],
     background: ['#0A1A1F', '#0F1419'] as readonly string[],
     tealGlow: ['rgba(20, 184, 166, 0.15)', 'transparent'] as readonly string[],
+    cta: ['#4A3A5A', '#3A4A5A'] as readonly string[],
+    cardVoice: ['#1A2E28', '#1A4A3A'] as readonly string[],
+    cardMultiStop: ['#2A2438', '#242A38'] as readonly string[],
+    pastelScreen: {
+      colors: ['#1A1F26', '#1E2430', '#242A38', '#2A2438', '#2A2838'] as const,
+      locations: [0, 0.2, 0.5, 0.75, 1] as const,
+      start: { x: 0.5, y: 0 } as const,
+      end: { x: 0.5, y: 1 } as const,
+    },
   },
 
   tabBar: {

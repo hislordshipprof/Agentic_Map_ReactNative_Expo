@@ -26,11 +26,14 @@ export interface OnboardingCtaProps {
   onPress: () => void;
   /** Slightly smaller for in-card usage (e.g. Get Started in journey card) */
   compact?: boolean;
+  /** Use soft pink gradient instead of teal */
+  variant?: 'teal' | 'pink';
 }
 
-const GRADIENT_COLORS = [Colors.primary.teal, Colors.primary.tealDark] as const;
+const TEAL_GRADIENT = [Colors.primary.teal, Colors.primary.tealDark] as const;
+const PINK_GRADIENT = ['#FFB8C9', '#FF9AB0'] as const;
 
-export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, compact }) => {
+export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, compact, variant = 'teal' }) => {
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -53,7 +56,7 @@ export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, co
       accessibilityRole="button"
     >
       <LinearGradient
-        colors={[...GRADIENT_COLORS]}
+        colors={[...(variant === 'pink' ? PINK_GRADIENT : TEAL_GRADIENT)]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.gradient, compact && styles.gradientCompact]}

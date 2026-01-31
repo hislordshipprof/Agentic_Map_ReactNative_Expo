@@ -1,14 +1,13 @@
 /**
  * HomeBottomSheet - Draggable bottom sheet for the home screen
  *
- * Uses Gesture.Pan + Reanimated (non-deprecated API).
- * Starts at ~50% screen height (collapsed), expands to ~90%.
- * Shows greeting, feature cards, saved places at collapsed;
- * reveals recent trips when expanded.
+ * Background: same pastel gradient as onboarding reference (cool white →
+ * lavender → soft pink), from theme.gradients.pastelScreen. Uses Gesture.Pan + Reanimated.
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions, ScrollView } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -27,7 +26,8 @@ export const HomeBottomSheet: React.FC = () => {
   const { height: screenHeight } = useWindowDimensions();
   const colors = useThemeColors();
 
-  const COLLAPSED_TOP = screenHeight * 0.45;
+  // 40% sheet visible = 60% from top
+  const COLLAPSED_TOP = screenHeight * 0.60;
   const EXPANDED_TOP = screenHeight * 0.08;
   const MAX_UP = -(COLLAPSED_TOP - EXPANDED_TOP);
 
@@ -35,6 +35,8 @@ export const HomeBottomSheet: React.FC = () => {
   const savedY = useSharedValue(0);
 
   const panGesture = Gesture.Pan()
+    .activeOffsetY([-12, 12])
+    .failOffsetX([-25, 25])
     .onStart(() => {
       savedY.value = translateY.value;
     })
@@ -56,6 +58,8 @@ export const HomeBottomSheet: React.FC = () => {
     transform: [{ translateY: translateY.value }],
   }));
 
+  const pastel = colors.gradients.pastelScreen;
+
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View
@@ -64,42 +68,67 @@ export const HomeBottomSheet: React.FC = () => {
           {
             top: COLLAPSED_TOP,
             height: screenHeight - EXPANDED_TOP,
-            backgroundColor: colors.background.primary,
             shadowColor: colors.effects.shadow,
+            overflow: 'hidden',
           },
           animatedStyle,
         ]}
       >
+        {/* Same gradient as onboarding reference: vertical, soft pastel */}
+        <LinearGradient
+          colors={[...pastel.colors]}
+          locations={[...pastel.locations]}
+          start={pastel.start}
+          end={pastel.end}
+          style={StyleSheet.absoluteFill}
+        />
+        {/* Very subtle top edge (matches reference “very soft” look) */}
+        <LinearGradient
+          colors={['rgba(255,255,255,0.12)', 'transparent']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.sheetTopHighlight}
+        />
         {/* Drag handle */}
         <View style={styles.handleContainer}>
           <View style={[styles.handle, { backgroundColor: colors.border.default }]} />
         </View>
 
-        {/* Greeting */}
-        <View style={styles.greetingRow}>
-          <Text style={[styles.greetingHi, { color: colors.text.secondary }]}>
-            Hi there
-          </Text>
-          <Text style={[styles.greeting, { color: colors.text.primary }]}>
-            Good {getTimeOfDay()}
-          </Text>
-          <Text style={[styles.greetingSub, { color: colors.text.secondary }]}>
-            How can I help you today?
-          </Text>
-        </View>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
+          bounces={false}
+          removeClippedSubviews={true}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.scrollContent}
+          scrollEventThrottle={16}
+        >
+          {/* Greeting */}
+          <View style={styles.greetingRow}>
+            <Text style={[styles.greetingHi, { color: colors.text.secondary }]}>
+              Hi Alex
+            </Text>
+            <Text style={[styles.greeting, { color: colors.text.primary }]}>
+              Good {getTimeOfDay()}
+            </Text>
+            <Text style={[styles.greetingSub, { color: colors.text.secondary }]}>
+              How can I help you today?
+            </Text>
+          </View>
 
-        {/* Feature Cards */}
-        <FeatureCards />
+          {/* Feature Cards */}
+          <FeatureCards />
 
-        {/* Saved Places */}
-        <View style={{ marginTop: Spacing.xl }}>
-          <SavedPlacesRow />
-        </View>
+          {/* Saved Places */}
+          <View style={{ marginTop: Spacing.xl }}>
+            <SavedPlacesRow />
+          </View>
 
-        {/* Recent Trips (visible when expanded) */}
-        <View style={{ marginTop: Spacing.xl }}>
-          <RecentTrips />
-        </View>
+          {/* Recent Trips */}
+          <View style={{ marginTop: Spacing.xl }}>
+            <RecentTrips />
+          </View>
+        </ScrollView>
       </Animated.View>
     </GestureDetector>
   );
@@ -120,9 +149,19 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  sheetTopHighlight: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 48,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    pointerEvents: 'none',
   },
   handleContainer: {
     alignItems: 'center',
@@ -133,23 +172,30 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 3,
   },
+  scrollContent: {
+    paddingBottom: 100,
+  },
   greetingRow: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.base,
+    alignItems: 'flex-start',
   },
   greetingHi: {
     fontFamily: FontFamily.primary,
     fontSize: FontSize.sm,
     marginBottom: 2,
+    textAlign: 'left',
   },
   greeting: {
     fontFamily: FontFamily.primary,
     fontSize: 26,
     fontWeight: '700',
+    textAlign: 'left',
   },
   greetingSub: {
     fontFamily: FontFamily.primary,
     fontSize: FontSize.sm,
     marginTop: 4,
+    textAlign: 'left',
   },
 });

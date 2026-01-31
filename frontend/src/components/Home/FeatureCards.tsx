@@ -1,14 +1,15 @@
 /**
  * FeatureCards - "Voice Assistant" + "Multi-Stop" side by side
  *
- * White/light cards with small colored icon badges, title + subtitle.
- * Matches the design mockup: light card bg with teal/purple accent circles.
+ * Cards use linear gradients (reference: teal→lavender, lavender gradient).
+ * Text left-aligned; icon and copy aligned for smooth layout.
  */
 
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useThemeColors } from '@/theme/useThemeColors';
 import { FontFamily, FontSize, Spacing } from '@/theme';
@@ -18,57 +19,57 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export const FeatureCards: React.FC = () => {
   const router = useRouter();
   const colors = useThemeColors();
+  const cardVoiceColors = [...colors.gradients.cardVoice];
+  const cardMultiStopColors = [...colors.gradients.cardMultiStop];
 
   return (
     <View style={styles.container}>
-      {/* Voice Assistant Card */}
+      {/* Voice Assistant Card - linear gradient teal → lavender */}
       <AnimatedPressable
         entering={FadeInDown.delay(100).duration(400)}
-        style={({ pressed }) => [
-          styles.card,
-          {
-            backgroundColor: colors.surface.card,
-            borderColor: colors.border.light,
-            shadowColor: colors.effects.shadow,
-          },
-          pressed && styles.cardPressed,
-        ]}
+        style={({ pressed }) => [styles.cardWrapper, pressed && styles.cardPressed]}
         onPress={() => router.push('/voice-assistant')}
       >
-        <View style={[styles.iconBadge, { backgroundColor: `${colors.primary.teal}18` }]}>
-          <Ionicons name="mic" size={20} color={colors.primary.teal} />
-        </View>
-        <Text style={[styles.cardTitle, { color: colors.text.primary }]}>
-          Voice Assistant
-        </Text>
-        <Text style={[styles.cardSubtitle, { color: colors.text.secondary }]}>
-          Talk to plan your route
-        </Text>
+        <LinearGradient
+          colors={cardVoiceColors as [string, string]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.card, { shadowColor: colors.effects.shadow }]}
+        >
+          <View style={[styles.iconBadge, { backgroundColor: colors.design.primaryBlue }]}>
+            <Ionicons name="mic" size={18} color="#FFFFFF" />
+          </View>
+          <Text style={[styles.cardTitle, { color: colors.text.primary }]}>
+            Voice Assistant
+          </Text>
+          <Text style={[styles.cardSubtitle, { color: colors.design.neutralGray }]}>
+            Talk to plan your route
+          </Text>
+        </LinearGradient>
       </AnimatedPressable>
 
-      {/* Multi-Stop Card */}
+      {/* Multi-Stop Card - linear gradient lavender */}
       <AnimatedPressable
         entering={FadeInDown.delay(200).duration(400)}
-        style={({ pressed }) => [
-          styles.card,
-          {
-            backgroundColor: `${colors.accent.purple}0D`,
-            borderColor: `${colors.accent.purple}20`,
-            shadowColor: colors.effects.shadow,
-          },
-          pressed && styles.cardPressed,
-        ]}
+        style={({ pressed }) => [styles.cardWrapper, pressed && styles.cardPressed]}
         onPress={() => router.push('/text-chat')}
       >
-        <View style={[styles.iconBadge, { backgroundColor: `${colors.accent.purple}18` }]}>
-          <Ionicons name="git-branch-outline" size={20} color={colors.accent.purple} />
-        </View>
-        <Text style={[styles.cardTitle, { color: colors.text.primary }]}>
-          Multi-Stop
-        </Text>
-        <Text style={[styles.cardSubtitle, { color: colors.text.secondary }]}>
-          Plan optimized routes
-        </Text>
+        <LinearGradient
+          colors={cardMultiStopColors as [string, string]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.card, { shadowColor: colors.effects.shadow }]}
+        >
+          <View style={[styles.iconBadge, { backgroundColor: colors.design.primaryBlue }]}>
+            <Ionicons name="git-branch-outline" size={18} color="#FFFFFF" />
+          </View>
+          <Text style={[styles.cardTitle, { color: colors.text.primary }]}>
+            Multi-Stop
+          </Text>
+          <Text style={[styles.cardSubtitle, { color: colors.design.neutralGray }]}>
+            Plan optimized routes
+          </Text>
+        </LinearGradient>
       </AnimatedPressable>
     </View>
   );
@@ -80,20 +81,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     gap: Spacing.md,
   },
+  cardWrapper: {
+    flex: 1,
+  },
   card: {
     flex: 1,
     borderRadius: 16,
     padding: Spacing.base,
-    borderWidth: 1,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
-    gap: 6,
+    minHeight: 120,
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
   },
   cardPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.97 }],
+    opacity: 0.9,
   },
   iconBadge: {
     width: 40,
@@ -101,15 +105,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   cardTitle: {
     fontFamily: FontFamily.primary,
     fontSize: FontSize.base,
     fontWeight: '700',
+    textAlign: 'left',
   },
   cardSubtitle: {
     fontFamily: FontFamily.primary,
     fontSize: FontSize.xs,
+    lineHeight: 16,
+    textAlign: 'left',
   },
 });

@@ -15,6 +15,7 @@ import type { Route, RouteOption } from '@/types/route';
 
 interface UseNavigateWithStopsOptions {
   onSystemMessage: (text: string) => void;
+  onAnchorNotSet?: (anchorType: string, pendingEntities: Entities, pendingOrigin: { lat: number; lng: number }) => void;
 }
 
 interface NavigateResult {
@@ -22,7 +23,7 @@ interface NavigateResult {
   routeOptions?: RouteOption[];
 }
 
-export function useNavigateWithStops({ onSystemMessage }: UseNavigateWithStopsOptions) {
+export function useNavigateWithStops({ onSystemMessage, onAnchorNotSet }: UseNavigateWithStopsOptions) {
   const router = useRouter();
   const {
     setPending,
@@ -93,8 +94,17 @@ export function useNavigateWithStops({ onSystemMessage }: UseNavigateWithStopsOp
           router.push('/route-display');
           return { success: true };
         }
-      } catch (e) {
+      } catch (e: unknown) {
         navigateDoneRef.current = false;
+        // Check for ANCHOR_NOT_SET error from backend
+        const errorData = (e as { response?: { data?: { error?: { code?: string; anchorType?: string; message?: string; askForAddress?: boolean } } } })?.response?.data?.error;
+        if (errorData?.code === 'ANCHOR_NOT_SET' && errorData.askForAddress) {
+          onSystemMessage(errorData.message ?? `I don't have your ${errorData.anchorType} address saved.`);
+          if (onAnchorNotSet && errorData.anchorType && loc) {
+            onAnchorNotSet(errorData.anchorType, ent, loc);
+          }
+          return { success: false };
+        }
         onSystemMessage(e instanceof Error ? e.message : 'Could not plan the route.');
         return { success: false };
       }

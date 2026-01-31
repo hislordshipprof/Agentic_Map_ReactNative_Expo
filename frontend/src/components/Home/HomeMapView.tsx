@@ -1,11 +1,14 @@
 /**
- * HomeMapView - Clean light map with user location marker and "Search this area" pill
+ * HomeMapView - Clean light map with user location and "Search this area" pill
+ *
+ * Uses a single stable Marker for the user (no native blue dot) to avoid flicker
+ * from multiple location updates. Shows location name in a Callout when address is available.
  */
 
-import React, { useRef } from 'react';
+import React, { useRef, useEffect, memo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
-import { useLocation } from '@/hooks';
+import MapView, { Marker, Callout, PROVIDER_GOOGLE } from 'react-native-maps';
+import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors, useTheme } from '@/theme/useThemeColors';
 import { FontFamily, FontSize, Spacing } from '@/theme';
 
@@ -28,25 +31,47 @@ const DARK_MAP_STYLE = [
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] },
 ];
 
-export const HomeMapView: React.FC = () => {
-  const { currentLocation } = useLocation();
+const DEFAULT_REGION = {
+  latitude: 39.7392,
+  longitude: -104.9903,
+  latitudeDelta: 0.05,
+  longitudeDelta: 0.05,
+};
+
+interface HomeMapViewProps {
+  initialLat?: number;
+  initialLng?: number;
+  /** Address for the user pin callout (from reverse geocode); avoids flicker from native dot. */
+  initialAddress?: string | null;
+}
+
+const HomeMapViewInner: React.FC<HomeMapViewProps> = ({
+  initialLat,
+  initialLng,
+  initialAddress,
+}) => {
   const { isDark } = useTheme();
   const colors = useThemeColors();
   const mapRef = useRef<MapView>(null);
+  const hasAnimatedToUser = useRef(false);
 
-  const initialRegion = currentLocation
-    ? {
-        latitude: currentLocation.lat,
-        longitude: currentLocation.lng,
-        latitudeDelta: 0.015,
-        longitudeDelta: 0.015,
-      }
-    : {
-        latitude: 39.7392,
-        longitude: -104.9903,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      };
+  // Use provided coords or fallback for initial region (stable, set once by parent)
+  const region = (initialLat != null && initialLng != null)
+    ? { latitude: initialLat, longitude: initialLng, latitudeDelta: 0.015, longitudeDelta: 0.015 }
+    : DEFAULT_REGION;
+
+  const hasUserCoords = initialLat != null && initialLng != null;
+
+  // Animate to user once when coords become available (no repeated updates = no flicker)
+  useEffect(() => {
+    if (hasUserCoords && mapRef.current && !hasAnimatedToUser.current) {
+      hasAnimatedToUser.current = true;
+      mapRef.current.animateToRegion(
+        { latitude: initialLat!, longitude: initialLng!, latitudeDelta: 0.015, longitudeDelta: 0.015 },
+        400
+      );
+    }
+  }, [initialLat, initialLng, hasUserCoords]);
 
   return (
     <View style={styles.container}>
@@ -54,17 +79,42 @@ export const HomeMapView: React.FC = () => {
         ref={mapRef}
         style={StyleSheet.absoluteFill}
         provider={PROVIDER_GOOGLE}
-        initialRegion={initialRegion}
-        showsUserLocation
+        initialRegion={region}
+        showsUserLocation={false}
+        followsUserLocation={false}
         showsMyLocationButton={false}
         showsCompass={false}
         customMapStyle={isDark ? DARK_MAP_STYLE : LIGHT_MAP_STYLE}
-      />
+        moveOnMarkerPress={false}
+        loadingEnabled
+        toolbarEnabled={false}
+      >
+        {hasUserCoords && (
+          <Marker
+            coordinate={{ latitude: initialLat!, longitude: initialLng! }}
+            anchor={{ x: 0.5, y: 0.5 }}
+            flat
+          >
+            <View style={[styles.userPin, { backgroundColor: colors.design.primaryBlue }]}>
+              <Ionicons name="location" size={18} color="#FFFFFF" />
+            </View>
+            {initialAddress ? (
+              <Callout tooltip>
+                <View style={[styles.callout, { backgroundColor: colors.surface.card }]}>
+                  <Text style={[styles.calloutText, { color: colors.text.primary }]} numberOfLines={2}>
+                    {initialAddress}
+                  </Text>
+                </View>
+              </Callout>
+            ) : null}
+          </Marker>
+        )}
+      </MapView>
 
       {/* Search this area pill */}
       <View style={styles.pillContainer}>
         <Pressable
-          style={[styles.searchPill, { backgroundColor: colors.primary.teal }]}
+          style={[styles.searchPill, { backgroundColor: colors.design.primaryBlue }]}
         >
           <Text style={styles.searchPillText}>Search this area</Text>
         </Pressable>
@@ -73,9 +123,34 @@ export const HomeMapView: React.FC = () => {
   );
 };
 
+export const HomeMapView = memo(HomeMapViewInner);
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  userPin: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  callout: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 8,
+    maxWidth: 220,
+  },
+  calloutText: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.sm,
   },
   pillContainer: {
     position: 'absolute',

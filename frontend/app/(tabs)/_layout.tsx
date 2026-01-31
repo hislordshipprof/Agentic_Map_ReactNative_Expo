@@ -6,10 +6,9 @@
  */
 
 import { Tabs } from 'expo-router';
-import { View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '@/theme/useThemeColors';
-import { MicFABTabButton } from '@/components/Navigation';
+import { MicFABTabButton } from '@/components/Navigation/MicFABTabButton';
 
 type TabIconProps = {
   name: keyof typeof Ionicons.glyphMap;
@@ -71,7 +70,6 @@ export default function TabLayout(): JSX.Element {
         }}
         listeners={{
           tabPress: (e) => {
-            // Prevent default tab behavior; FAB handles its own navigation
             e.preventDefault();
           },
         }}
@@ -94,13 +92,8 @@ export default function TabLayout(): JSX.Element {
           ),
         }}
       />
-      {/* Hide legacy route tab from tab bar */}
-      <Tabs.Screen
-        name="route"
-        options={{
-          href: null,
-        }}
-      />
+      {/* Hide legacy route screen from tab bar */}
+      <Tabs.Screen name="route" options={{ href: null }} />
     </Tabs>
   );
 }

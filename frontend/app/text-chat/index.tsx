@@ -20,15 +20,17 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { AnimatedMessage } from '@/components/Conversation';
 import type { Message } from '@/components/Conversation';
-import { useNLUFlow, useLocation, useNavigateWithStops } from '@/hooks';
+import { useNLUFlow, useLocation, useNavigateWithStops, useUserAnchors } from '@/hooks';
 import { ThinkingBubble } from '@/components/Common';
 import { UserInputField } from '@/components/Input';
 import { ConfirmationDialog, AlternativesDialog, DEFAULT_ALTERNATIVES } from '@/components/Dialogs';
 import { RouteOptionsSheet } from '@/components/Route';
-import { errandApi, checkBackendConnectivity } from '@/services/api';
+import { AddressInputBubble } from '@/components/Chat/AddressInputBubble';
+import { errandApi, checkBackendConnectivity, userApi } from '@/services/api';
 import { useThemeColors } from '@/theme/useThemeColors';
 import { Spacing, FontFamily, FontSize } from '@/theme';
 import type { Entities } from '@/types/nlu';
+import type { AnchorType } from '@/types/user';
 
 function entitiesToConfirmation(entities: Entities): { destination?: string; stops?: string[] } {
   return {
@@ -61,10 +63,16 @@ export default function TextChatScreen(): JSX.Element {
     isLoading: locationLoading,
   } = useLocation();
 
+  const { setAnchor } = useUserAnchors();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [processingPhase, setProcessingPhase] = useState<'idle' | 'understanding' | 'planning_route'>('idle');
   const escalationInProgressRef = useRef(false);
+  const [awaitingAddress, setAwaitingAddress] = useState<{
+    anchorType: string;
+    pendingEntities: Entities;
+    pendingOrigin: { lat: number; lng: number };
+  } | null>(null);
 
   const appendSystem = useCallback((text: string) => {
     setMessages((prev) => [
@@ -72,6 +80,13 @@ export default function TextChatScreen(): JSX.Element {
       { id: `system_${Date.now()}`, sender: 'system', text, timestamp: Date.now() },
     ]);
   }, []);
+
+  const handleAnchorNotSet = useCallback(
+    (anchorType: string, pendingEntities: Entities, pendingOrigin: { lat: number; lng: number }) => {
+      setAwaitingAddress({ anchorType, pendingEntities, pendingOrigin });
+    },
+    [],
+  );
 
   const {
     doNavigate,
@@ -81,7 +96,7 @@ export default function TextChatScreen(): JSX.Element {
     routeOptions,
     showRouteOptions,
     routeDestinationName,
-  } = useNavigateWithStops({ onSystemMessage: appendSystem });
+  } = useNavigateWithStops({ onSystemMessage: appendSystem, onAnchorNotSet: handleAnchorNotSet });
 
   // Conversational response
   useEffect(() => {
@@ -185,6 +200,51 @@ export default function TextChatScreen(): JSX.Element {
     [currentLocation, locationError, locationLoading, processUtterance, appendSystem, messages, resetNavigateGuard]
   );
 
+  const handleAddressSelected = useCallback(
+    async (result: { location: { lat: number; lng: number }; address: string; name: string }) => {
+      if (!awaitingAddress) return;
+      const type = awaitingAddress.anchorType as AnchorType;
+      const pending = awaitingAddress;
+
+      appendSystem(`Setting ${type} to: ${result.address}`);
+      await setAnchor(type, result.location, type === 'home' ? 'Home' : 'Work', result.address);
+      try {
+        await userApi.saveAnchor({
+          name: type === 'home' ? 'Home' : 'Work',
+          location: result.location,
+          address: result.address,
+          type,
+        });
+      } catch {
+        // Backend sync failed silently
+      }
+
+      setAwaitingAddress(null);
+
+      // Retry the original navigate request
+      appendSystem('Address saved! Planning your route...');
+      resetNavigateGuard();
+      setProcessingPhase('planning_route');
+      setIsLoading(true);
+      try {
+        await doNavigate(pending.pendingEntities, pending.pendingOrigin);
+      } finally {
+        setProcessingPhase('idle');
+        setIsLoading(false);
+      }
+    },
+    [awaitingAddress, setAnchor, appendSystem, resetNavigateGuard, doNavigate],
+  );
+
+  const handleUseCurrentLocationForAnchor = useCallback(async () => {
+    if (!awaitingAddress || !currentLocation) return;
+    handleAddressSelected({
+      location: currentLocation,
+      address: address ?? 'Current location',
+      name: address ?? 'Current location',
+    });
+  }, [awaitingAddress, currentLocation, address, handleAddressSelected]);
+
   const handleConfirmThenNavigate = useCallback(() => {
     confirmCurrentIntent();
     doNavigate(entities, currentLocation);
@@ -228,6 +288,14 @@ export default function TextChatScreen(): JSX.Element {
               showTimestamp
             />
           ))}
+
+          {awaitingAddress && (
+            <AddressInputBubble
+              anchorType={awaitingAddress.anchorType}
+              onAddressSelected={handleAddressSelected}
+              onUseCurrentLocation={handleUseCurrentLocationForAnchor}
+            />
+          )}
 
           {isLoading && (
             <View style={styles.thinkingContainer}>

@@ -164,9 +164,9 @@ export default function ProfileSetupScreen() {
         easing: Easing.out(Easing.cubic),
       });
 
-      // Navigate after animation
+      // Navigate to places setup after animation
       setTimeout(() => {
-        router.replace('/(tabs)');
+        router.replace('/auth/places-setup');
       }, 800);
     } catch (error) {
       setIsSaving(false);
@@ -175,7 +175,7 @@ export default function ProfileSetupScreen() {
   };
 
   const handleSkip = () => {
-    router.replace('/(tabs)');
+    router.replace('/auth/places-setup');
   };
 
   const getInitials = () => {
