@@ -16,6 +16,8 @@ export class NluProcessDto {
   @IsString() utterance: string;
   @IsOptional() @ValidateNested() @Type(() => LatLngDto) currentLocation?: LatLngDto;
   @IsOptional() @ValidateNested() @Type(() => NluContextDto) context?: NluContextDto;
+  @IsOptional()
+  conversationHistory?: Array<{ role: string; content: string }>;
 }
 
 export class EscalateDto {

@@ -23,7 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 // Components
 import { AnimatedMessage } from '@/components/Conversation';
 import type { Message } from '@/components/Conversation';
-import { useRoute, useNLUFlow, useLocation, useUnifiedVoice } from '@/hooks';
+import { useRoute, useNLUFlow, useLocation, useUnifiedVoice, useUserAnchors } from '@/hooks';
 import { VoiceMicButton, VoiceStatusIndicator, CircularWaveform } from '@/components/Voice';
 import {
   GlassCard,
@@ -149,6 +149,7 @@ export default function ConversationScreen(): JSX.Element {
     selectAlternative,
     shouldShowConfirmation,
     shouldShowAlternatives,
+    lastMessage,
   } = useNLUFlow();
   const {
     currentLocation,
@@ -174,6 +175,9 @@ export default function ConversationScreen(): JSX.Element {
     handleReject: handleVoiceReject,
     voiceBackend,
   } = useUnifiedVoice();
+
+  // User anchors (home, work) for resolving destination references
+  const { anchors } = useUserAnchors();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -212,6 +216,7 @@ export default function ConversationScreen(): JSX.Element {
           origin: loc,
           destination: { name: ent.destination },
           stops: (ent.stops || []).map((s) => ({ name: s, category: ent.category })),
+          anchors: anchors.map((a) => ({ name: a.name, location: a.location })),
         });
         if (!res.success || res.error) {
           navigateDoneRef.current = false;
@@ -233,12 +238,14 @@ export default function ConversationScreen(): JSX.Element {
         // Check if we have multiple route options
         if (data.routeOptions && data.routeOptions.length > 1) {
           // Show route options sheet for user selection
+          console.log(`[doNavigate] Multiple route options: ${data.routeOptions.length}, showing selection sheet`);
           setRouteOptions(data.routeOptions, data.destination?.name || ent.destination);
           const n = data.route.stops?.length ?? 0;
           appendSystem(
             `Found ${data.routeOptions.length} route options with ${n} stop${n !== 1 ? 's' : ''}. Please select your preferred route.`
           );
         } else {
+          console.log(`[doNavigate] Single route option (${data.routeOptions?.length ?? 0}), going directly to route screen`);
           // Single route - proceed directly
           setPending(data.route);
           const n = data.route.stops?.length ?? 0;
@@ -253,8 +260,15 @@ export default function ConversationScreen(): JSX.Element {
         appendSystem(e instanceof Error ? e.message : 'Could not plan the route.');
       }
     },
-    [appendSystem, setPending, setRouteOptions, router]
+    [appendSystem, setPending, setRouteOptions, router, anchors]
   );
+
+  // Conversational response: display Gemini's message
+  useEffect(() => {
+    if (flowState === 'conversational' && lastMessage) {
+      appendSystem(lastMessage);
+    }
+  }, [flowState, lastMessage, appendSystem]);
 
   // HIGH confidence: navigate when we have intent, destination, and location
   useEffect(() => {
@@ -335,7 +349,15 @@ export default function ConversationScreen(): JSX.Element {
       setProcessingPhase('understanding');
       setIsLoading(true);
       try {
-        await processUtterance(text, currentLocation ?? undefined);
+        // Build conversation history from recent messages (last 10)
+        const recentMessages = [...messages, userMessage]
+          .filter((m) => m.sender === 'user' || m.sender === 'system')
+          .slice(-10);
+        const conversationHistory = recentMessages.map((m) => ({
+          role: m.sender === 'system' ? 'model' : 'user',
+          content: m.text,
+        }));
+        await processUtterance(text, currentLocation ?? undefined, conversationHistory);
       } catch (e) {
         appendSystem(e instanceof Error ? e.message : 'Something went wrong.');
       } finally {
@@ -367,10 +389,13 @@ export default function ConversationScreen(): JSX.Element {
   // Route option selection handler
   const handleRouteOptionSelect = useCallback(
     (option: RouteOption) => {
+      console.log('[handleRouteOptionSelect] Selected option:', option.id, option.label);
+      console.log('[handleRouteOptionSelect] Route data:', option.route ? 'present' : 'missing');
       selectRouteOption(option);
       appendSystem(
         `Selected ${option.label}. ${option.stops.length} stop${option.stops.length !== 1 ? 's' : ''} - ${Math.round(option.totalTimeMin)} min total.`
       );
+      console.log('[handleRouteOptionSelect] Navigating to route screen...');
       router.push('/(tabs)/route');
     },
     [selectRouteOption, appendSystem, router]
@@ -613,20 +638,39 @@ export default function ConversationScreen(): JSX.Element {
           </View>
         ) : (
           <View style={styles.textInputArea}>
-            <UserInputField
-              onSend={handleSend}
-              onVoicePress={handleVoicePress}
-              onVoiceRelease={handleVoiceRelease}
-              isLoading={isLoading}
-              showVoiceButton
-              placeholder="Type a message..."
-            />
-            {/* Voice mode toggle button */}
+            <View style={styles.textInputWrapper}>
+              <UserInputField
+                onSend={handleSend}
+                onVoicePress={handleVoicePress}
+                onVoiceRelease={handleVoiceRelease}
+                isLoading={isLoading}
+                showVoiceButton={false}
+                placeholder="Type your request..."
+                style={styles.textInputField}
+                disableWrapperPadding
+              />
+              {/* Voice mode toggle button - prominent and accessible */}
+              <Pressable
+                style={styles.voiceModeToggleButton}
+                onPress={toggleVoice}
+              >
+                <LinearGradient
+                  colors={[Colors.primary.teal, Colors.primary.tealDark]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.voiceModeToggleGradient}
+                >
+                  <Ionicons name="mic" size={22} color={Colors.dark.text.primary} />
+                </LinearGradient>
+              </Pressable>
+            </View>
+            {/* Subtle hint text */}
             <Pressable
-              style={styles.voiceModeButton}
+              style={styles.modeHint}
               onPress={toggleVoice}
             >
-              <Ionicons name="mic" size={20} color={Colors.primary.teal} />
+              <Ionicons name="mic-outline" size={14} color={Colors.dark.text.tertiary} />
+              <Text style={styles.modeHintText}>Tap to use voice</Text>
             </Pressable>
           </View>
         )}
@@ -910,20 +954,59 @@ const styles = StyleSheet.create({
     color: Colors.dark.text.tertiary,
   },
   textInputArea: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xl,
+    backgroundColor: Colors.effects.glassDark,
+    borderTopWidth: 1,
+    borderTopColor: Colors.effects.glassDarkBorder,
+    // Subtle top glow effect
+    shadowColor: Colors.primary.teal,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  textInputWrapper: {
     flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: Spacing.md,
+  },
+  textInputField: {
+    flex: 1,
+    margin: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  voiceModeToggleButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    overflow: 'hidden',
+    shadowColor: Colors.primary.teal,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  voiceModeToggleGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  voiceModeButton: {
-    position: 'absolute',
-    right: Spacing.lg,
-    bottom: Spacing.xl,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.effects.glassDark,
+  modeHint: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.primary.teal,
+    gap: Spacing.xs,
+    marginTop: Spacing.md,
+    paddingVertical: Spacing.xs,
+  },
+  modeHintText: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.xs,
+    color: Colors.dark.text.tertiary,
+    fontWeight: '500',
   },
 });

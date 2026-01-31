@@ -10,6 +10,6 @@ export class NluController {
 
   @Post('process')
   async process(@Body() dto: NluProcessDto) {
-    return this.nlu.process(dto.utterance, dto.context);
+    return this.nlu.process(dto.utterance, dto.context, dto.conversationHistory);
   }
 }

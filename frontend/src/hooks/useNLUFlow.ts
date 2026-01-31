@@ -48,6 +48,7 @@ export type NLUFlowState =
   | 'alternatives_required'
   | 'disambiguation_required'
   | 'escalating'
+  | 'conversational'
   | 'error';
 
 /**
@@ -68,8 +69,11 @@ export interface UseNLUFlowResult {
   isEscalating: boolean;
   retryCount: number;
 
+  // Conversational response
+  lastMessage: string | null;
+
   // Actions
-  processUtterance: (utterance: string, currentLocation?: { lat: number; lng: number }) => Promise<void>;
+  processUtterance: (utterance: string, currentLocation?: { lat: number; lng: number }, conversationHistory?: Array<{ role: string; content: string }>) => Promise<void>;
   onNLUResponse: (response: NLUResponse) => void;
   confirmCurrentIntent: () => void;
   rejectAndRephrase: () => void;
@@ -115,6 +119,7 @@ export const useNLUFlow = (): UseNLUFlowResult => {
 
   // Local flow state for UI control
   const [flowState, setFlowState] = useState<NLUFlowState>('idle');
+  const [lastMessage, setLastMessage] = useState<string | null>(null);
 
   /**
    * Calculate current confidence level
@@ -130,7 +135,15 @@ export const useNLUFlow = (): UseNLUFlowResult => {
    */
   const onNLUResponse = useCallback(
     (response: NLUResponse) => {
+      // Handle conversational responses (no action, just a text reply)
+      if (response.type === 'conversation') {
+        setLastMessage(response.message ?? null);
+        setFlowState('conversational');
+        return;
+      }
+
       dispatch(processNLUResponse(response));
+      setLastMessage(null);
 
       const level = getConfidenceLevel(response.confidence);
 
@@ -167,7 +180,11 @@ export const useNLUFlow = (): UseNLUFlowResult => {
    * Process a user utterance and determine the flow
    */
   const processUtterance = useCallback(
-    async (utterance: string, currentLocation?: { lat: number; lng: number }) => {
+    async (
+      utterance: string,
+      currentLocation?: { lat: number; lng: number },
+      conversationHistory?: Array<{ role: string; content: string }>,
+    ) => {
       setFlowState('processing');
 
       try {
@@ -175,6 +192,7 @@ export const useNLUFlow = (): UseNLUFlowResult => {
           utterance,
           currentLocation,
           context: undefined,
+          conversationHistory,
         });
         if (!res.success || res.error) {
           setFlowState('error');
@@ -286,6 +304,7 @@ export const useNLUFlow = (): UseNLUFlowResult => {
     isConfirmationRequired: confirmationRequired,
     isEscalating,
     retryCount: lowConfidenceRetries,
+    lastMessage,
 
     // Actions
     processUtterance,

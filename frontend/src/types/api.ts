@@ -72,6 +72,8 @@ export interface ProcessUtteranceRequest {
     previousEntities?: Entities;
     conversationId?: string;
   };
+  /** Conversation history for multi-turn NLU */
+  conversationHistory?: Array<{ role: string; content: string }>;
 }
 
 export type ProcessUtteranceResponse = ApiResponse<NLUResponse>;
@@ -137,6 +139,8 @@ export interface NavigateWithStopsRequest {
     name: string;
     category?: string;
   }>;
+  /** User's saved locations (home, work) for resolving anchor references */
+  anchors?: Array<{ name: string; location: LatLng }>;
   preferences?: Partial<UserPreferences>;
 }
 
