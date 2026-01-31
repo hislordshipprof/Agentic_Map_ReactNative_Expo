@@ -43,7 +43,7 @@ const styles = StyleSheet.create({
   track: {
     height: 4,
     width: '100%',
-    backgroundColor: Colors.dark.elevated,
+    backgroundColor: '#E5E7EB',
     borderRadius: 2,
     overflow: 'hidden',
     marginBottom: Spacing.md,

@@ -126,18 +126,27 @@ export const Colors = {
   },
 
   /**
+   * ACCENT COLORS - Secondary accents for multi-stop, markers, etc.
+   */
+  accent: {
+    purple: '#7C3AED',           // Secondary accent (stop markers, multi-stop cards)
+    purpleLight: '#A78BFA',      // Lighter purple for highlights
+    purpleDark: '#6D28D9',       // Darker purple for pressed states
+  },
+
+  /**
    * MAP ELEMENTS - Visual markers
    * Per requirements-frontend.md Phase 3.3:
    * - Green pin: Start location
-   * - Blue pins: Stop waypoints (numbered)
+   * - Purple pins: Stop waypoints (numbered)
    * - Red pin: Final destination
    */
   map: {
     start: '#10B981',            // Start marker (green)
-    stop: '#2563EB',             // Stop markers (blue)
+    stop: '#7C3AED',             // Stop markers (purple)
     destination: '#EF4444',      // Destination marker (red)
-    polyline: '#2563EB',         // Route line (blue)
-    polylineActive: '#1E40AF',   // Active route segment (dark blue)
+    polyline: '#14B8A6',         // Route line (teal)
+    polylineActive: '#0D9488',   // Active route segment (dark teal)
   },
 
   /**

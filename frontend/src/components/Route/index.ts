@@ -24,3 +24,8 @@ export type { RouteConfirmationScreenProps } from './RouteConfirmationScreen';
 
 export { RouteOptionsSheet } from './RouteOptionsSheet';
 export type { RouteOptionsSheetProps } from './RouteOptionsSheet';
+
+// New route display components
+export { RouteTimeline } from './RouteTimeline';
+export { OptimizationBadge } from './OptimizationBadge';
+export { StatCards } from './StatCards';

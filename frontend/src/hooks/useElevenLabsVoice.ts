@@ -306,7 +306,7 @@ export function useElevenLabsVoice() {
           dispatch(setPendingRoute(route));
 
           // Navigate to route tab to show the route confirmation screen
-          router.push('/(tabs)/route');
+          router.push('/route-display');
 
           console.log('[ElevenLabs] Route displayed on map:', route.id, 'with', stops.length, 'stops');
           return 'Route displayed on map successfully';
@@ -333,7 +333,7 @@ export function useElevenLabsVoice() {
 
           // Navigate to the route tab to show the summary screen first
           // The route tab will show the confirmed route with a "Start Driving" button
-          router.push('/(tabs)/route');
+          router.push('/route-display');
 
           console.log('[ElevenLabs] Route confirmed, showing summary for:', params.route_id);
           return 'Route confirmed. Showing route summary - tap Start Driving when ready.';

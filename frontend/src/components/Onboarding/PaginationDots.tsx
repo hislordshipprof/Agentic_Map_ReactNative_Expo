@@ -1,8 +1,8 @@
-/** Pagination dots for onboarding: 3 steps, active = teal. */
+/** Pagination dots for onboarding: 3 steps, active = teal, light theme. */
 
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Colors, Spacing, Layout } from '@/theme';
+import { Spacing, Layout } from '@/theme';
 
 export interface PaginationDotsProps {
   /** 1, 2, or 3 */
@@ -41,11 +41,11 @@ const styles = StyleSheet.create({
     borderRadius: Layout.radiusFull,
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: Colors.dark.text.tertiary,
+    borderColor: '#D1D5DB',
   },
   dotActive: {
     width: 24,
-    backgroundColor: Colors.primary.teal,
+    backgroundColor: '#14B8A6',
     borderWidth: 0,
   },
 });

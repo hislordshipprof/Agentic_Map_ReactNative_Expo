@@ -60,6 +60,9 @@ export {
   type UseUnifiedVoiceResult,
 } from './useUnifiedVoice';
 
+// Navigate with stops hook (shared route planning logic)
+export { useNavigateWithStops } from './useNavigateWithStops';
+
 // User anchors hook (home, work, etc.)
 export {
   useUserAnchors,

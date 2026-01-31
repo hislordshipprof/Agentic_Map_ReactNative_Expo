@@ -63,7 +63,7 @@ export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, co
           <Ionicons
             name="chevron-forward"
             size={20}
-            color={Colors.dark.text.primary}
+            color="#FFFFFF"
             style={styles.icon}
           />
         )}
@@ -71,7 +71,7 @@ export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, co
           <Ionicons
             name="arrow-forward"
             size={18}
-            color={Colors.dark.text.primary}
+            color="#FFFFFF"
             style={styles.icon}
           />
         )}
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.primary,
     fontSize: FontSize.base,
     fontWeight: '600',
-    color: Colors.dark.text.primary,
+    color: '#FFFFFF',
   },
   icon: {
     marginLeft: 2,

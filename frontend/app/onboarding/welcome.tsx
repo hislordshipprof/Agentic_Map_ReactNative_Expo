@@ -1,4 +1,6 @@
-/** Onboarding 1: Just Say Where – voice/plain-English input, no menus. */
+/**
+ * Onboarding 1: Ask Anything - AI assistant branding, light theme.
+ */
 
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
@@ -7,16 +9,8 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  Colors,
-  ColorUtils,
-  FontFamily,
-  FontSize,
-  Spacing,
-  Layout,
-} from '@/theme';
+import { FontFamily, FontSize, Spacing, Layout } from '@/theme';
 import { Skip, PaginationDots, OnboardingCta, OnboardingProgressBar, PulsatingRings } from '@/components/Onboarding';
-import { ActionChip, ActionChipGroup } from '@/components/Common';
 
 const ONBOARDING_KEY = '@agentic_map:onboarding_complete';
 
@@ -41,57 +35,35 @@ export default function WelcomeScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View
-            entering={FadeIn.duration(500)}
-            style={styles.ringsWrap}
-          >
+          {/* AI character area */}
+          <Animated.View entering={FadeIn.duration(500)} style={styles.ringsWrap}>
             <PulsatingRings size={140}>
               <View style={styles.chatIconWrap}>
-                <Ionicons name="chatbubble-outline" size={56} color={Colors.primary.teal} />
+                <Ionicons name="chatbubble-outline" size={56} color="#14B8A6" />
               </View>
             </PulsatingRings>
           </Animated.View>
 
-          <Animated.Text
-            entering={FadeInDown.duration(400).delay(100)}
-            style={styles.title}
-          >
-            Just Say Where
+          <Animated.Text entering={FadeInDown.duration(400).delay(100)} style={styles.title}>
+            Ask Anything.
+          </Animated.Text>
+          <Animated.Text entering={FadeInDown.duration(400).delay(160)} style={styles.titleAccent}>
+            Get Answers Now.
           </Animated.Text>
 
-          <Animated.View
-            entering={FadeInDown.duration(400).delay(180)}
-            style={styles.subtitleRow}
-          >
-            <View style={styles.subtitleBlock}>
-              <Text style={styles.subtitle}>Tell us your destination in plain English</Text>
-              <Text style={styles.subtitle}>No more tapping through menus.</Text>
-            </View>
-            <Pressable
-              style={({ pressed }) => [styles.locationPin, pressed && styles.locationPinPressed]}
-            >
-              <Ionicons name="location-outline" size={20} color={Colors.primary.teal} />
-            </Pressable>
-          </Animated.View>
+          <Animated.Text entering={FadeInDown.duration(400).delay(220)} style={styles.subtitle}>
+            Tell us your destination in plain English.{'\n'}No more tapping through menus.
+          </Animated.Text>
 
-          <Animated.View
-            entering={FadeInUp.duration(400).delay(260)}
-            style={styles.exampleCard}
-          >
+          {/* Example card */}
+          <Animated.View entering={FadeInUp.duration(400).delay(300)} style={styles.exampleCard}>
             <View style={styles.exampleRow}>
               <Text style={styles.exampleText} numberOfLines={2}>
                 Take me home with stops at Starbucks and Walmart
               </Text>
-              <Pressable style={({ pressed }) => [styles.micBtn, pressed && styles.micBtnPressed]}>
-                <Ionicons name="mic-outline" size={22} color={Colors.primary.teal} />
-              </Pressable>
-            </View>
-            <View style={styles.chipsInCard}>
-              <ActionChipGroup direction="horizontal" wrap={false} gap={Spacing.sm}>
-                <ActionChip label="Home" onPress={() => {}} variant="suggested" size="small" />
-                <ActionChip label="Work" onPress={() => {}} variant="suggested" size="small" />
-                <ActionChip label="Grocery store" onPress={() => {}} variant="suggested" size="small" />
-              </ActionChipGroup>
+              <View style={styles.micBtn}>
+                <Ionicons name="mic-outline" size={22} color="#14B8A6" />
+              </View>
             </View>
           </Animated.View>
         </ScrollView>
@@ -111,11 +83,9 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.dark.background,
+    backgroundColor: '#FFFFFF',
   },
-  inner: {
-    flex: 1,
-  },
+  inner: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: Spacing.xl,
@@ -130,7 +100,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: ColorUtils.withAlpha(Colors.primary.teal, 0.2),
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -138,51 +108,33 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.primary,
     fontSize: FontSize['3xl'],
     fontWeight: '700',
-    color: Colors.dark.text.primary,
+    color: '#1A2332',
+    textAlign: 'center',
+  },
+  titleAccent: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize['3xl'],
+    fontWeight: '700',
+    color: '#14B8A6',
     textAlign: 'center',
     marginBottom: Spacing.base,
-  },
-  subtitleRow: {
-    position: 'relative',
-    marginBottom: Spacing['2xl'],
-    paddingHorizontal: Spacing.sm,
-    minHeight: 48,
-  },
-  subtitleBlock: {
-    width: '100%',
-    paddingRight: 44,
-    alignItems: 'center',
   },
   subtitle: {
     fontFamily: FontFamily.primary,
     fontSize: FontSize.base,
-    color: Colors.dark.text.secondary,
+    color: '#6B7280',
     textAlign: 'center',
     lineHeight: 22,
-  },
-  locationPin: {
-    position: 'absolute',
-    right: 0,
-    top: 4,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: ColorUtils.withAlpha(Colors.primary.teal, 0.15),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationPinPressed: {
-    opacity: 0.8,
+    marginBottom: Spacing['2xl'],
   },
   exampleCard: {
     width: '100%',
-    backgroundColor: Colors.effects.glassDark,
+    backgroundColor: '#F8FAFB',
     borderWidth: 1,
-    borderColor: Colors.effects.glassDarkBorder,
+    borderColor: '#E5E7EB',
     borderRadius: Layout.radiusLarge,
     paddingVertical: Spacing.base,
     paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.xl,
   },
   exampleRow: {
     flexDirection: 'row',
@@ -194,24 +146,15 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.primary,
     fontSize: FontSize.base,
     fontWeight: '500',
-    color: Colors.dark.text.primary,
+    color: '#1A2332',
   },
   micBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: ColorUtils.withAlpha(Colors.primary.teal, 0.2),
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  micBtnPressed: {
-    opacity: 0.8,
-  },
-  chipsInCard: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: Colors.effects.glassDarkBorder,
   },
   footer: {
     paddingHorizontal: Spacing.xl,

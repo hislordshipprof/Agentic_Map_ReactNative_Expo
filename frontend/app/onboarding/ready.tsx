@@ -1,20 +1,17 @@
-/** Onboarding 3: Navigate with Ease – journey at a glance, Get Started. */
+/**
+ * Onboarding 3: Get Started - Full-width teal CTA, light theme.
+ */
 
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { FadeIn, FadeInDown, SlideInUp } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  Colors,
-  FontFamily,
-  FontSize,
-  Spacing,
-  Layout,
-} from '@/theme';
-import { Skip, PaginationDots, OnboardingCta, OnboardingProgressBar, RouteGridCard } from '@/components/Onboarding';
+import { FontFamily, FontSize, Spacing, Layout } from '@/theme';
+import { Skip, PaginationDots, OnboardingProgressBar } from '@/components/Onboarding';
 
 const ONBOARDING_KEY = '@agentic_map:onboarding_complete';
 
@@ -27,7 +24,6 @@ export default function ReadyScreen() {
     } catch {
       // ignore
     }
-    // Redirect to auth flow after onboarding
     router.replace('/auth/welcome');
   };
 
@@ -37,7 +33,6 @@ export default function ReadyScreen() {
     } catch {
       // ignore
     }
-    // Skip also goes to auth, user can skip auth there too
     router.replace('/auth/welcome');
   };
 
@@ -50,35 +45,27 @@ export default function ReadyScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Animated.Text
-            entering={FadeInDown.duration(400).delay(60)}
-            style={styles.title}
-          >
+          <Animated.Text entering={FadeInDown.duration(400).delay(60)} style={styles.title}>
             Navigate with Ease
           </Animated.Text>
 
-          <Animated.Text
-            entering={FadeInDown.duration(400).delay(140)}
-            style={styles.subtitle}
-          >
+          <Animated.Text entering={FadeInDown.duration(400).delay(140)} style={styles.subtitle}>
             See your entire journey at a glance.{'\n'}Every stop, perfectly planned.
           </Animated.Text>
 
-          <RouteGridCard />
-
-          <Animated.View
-            entering={SlideInUp.springify().damping(18).stiffness(120).delay(400)}
-            style={styles.journeyCard}
-          >
+          {/* Journey preview card */}
+          <Animated.View entering={SlideInUp.springify().damping(18).stiffness(120).delay(300)} style={styles.journeyCard}>
             <View style={styles.journeyLeft}>
-              <Ionicons name="navigate" size={24} color={Colors.primary.teal} style={styles.journeyIcon} />
+              <View style={styles.journeyIconCircle}>
+                <Ionicons name="navigate" size={24} color="#14B8A6" />
+              </View>
               <View>
                 <Text style={styles.journeyTitle}>Your Journey</Text>
                 <View style={styles.journeyMeta}>
-                  <Ionicons name="time-outline" size={14} color={Colors.dark.text.secondary} />
+                  <Ionicons name="time-outline" size={14} color="#6B7280" />
                   <Text style={styles.journeyMetaText}>22 min</Text>
                 </View>
-                <Text style={styles.journeyMetaText}>4 stops • miles</Text>
+                <Text style={styles.journeyMetaText}>4 stops - 8.2 miles</Text>
               </View>
             </View>
           </Animated.View>
@@ -88,7 +75,19 @@ export default function ReadyScreen() {
           <OnboardingProgressBar step={3} />
           <View style={styles.footerRow}>
             <PaginationDots activeStep={3} />
-            <OnboardingCta label="Get Started" onPress={handleGetStarted} />
+            <View style={{ flex: 1, marginLeft: Spacing.xl }}>
+              <Pressable onPress={handleGetStarted} style={styles.ctaWrapper}>
+                <LinearGradient
+                  colors={['#14B8A6', '#0D9488']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.ctaGradient}
+                >
+                  <Text style={styles.ctaText}>Get Started</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                </LinearGradient>
+              </Pressable>
+            </View>
           </View>
         </Animated.View>
       </View>
@@ -99,11 +98,9 @@ export default function ReadyScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.dark.background,
+    backgroundColor: '#FFFFFF',
   },
-  inner: {
-    flex: 1,
-  },
+  inner: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: Spacing.xl,
@@ -115,14 +112,14 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.primary,
     fontSize: FontSize['3xl'],
     fontWeight: '700',
-    color: Colors.dark.text.primary,
+    color: '#1A2332',
     textAlign: 'center',
     marginBottom: Spacing.base,
   },
   subtitle: {
     fontFamily: FontFamily.primary,
     fontSize: FontSize.base,
-    color: Colors.dark.text.secondary,
+    color: '#6B7280',
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: Spacing.xl,
@@ -131,13 +128,11 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Colors.effects.glassDark,
+    backgroundColor: '#F8FAFB',
     borderWidth: 1,
-    borderColor: Colors.effects.glassDarkBorder,
+    borderColor: '#E5E7EB',
     borderRadius: Layout.radiusLarge,
     padding: Spacing.lg,
-    marginTop: Spacing.xl,
     gap: Spacing.md,
   },
   journeyLeft: {
@@ -146,14 +141,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.md,
   },
-  journeyIcon: {
-    marginRight: Spacing.xs,
+  journeyIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   journeyTitle: {
     fontFamily: FontFamily.primary,
     fontSize: FontSize.lg,
     fontWeight: '600',
-    color: Colors.dark.text.primary,
+    color: '#1A2332',
   },
   journeyMeta: {
     flexDirection: 'row',
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
   journeyMetaText: {
     fontFamily: FontFamily.primary,
     fontSize: FontSize.sm,
-    color: Colors.dark.text.secondary,
+    color: '#6B7280',
   },
   footer: {
     paddingHorizontal: Spacing.xl,
@@ -174,6 +174,23 @@ const styles = StyleSheet.create({
   footerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+  },
+  ctaWrapper: {
+    borderRadius: Layout.radiusLarge,
+    overflow: 'hidden',
+  },
+  ctaGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.base,
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.xs,
+  },
+  ctaText: {
+    fontFamily: FontFamily.primary,
+    fontSize: FontSize.base,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

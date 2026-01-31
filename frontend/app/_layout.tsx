@@ -23,6 +23,7 @@ import { importAnchors } from '@/redux/slices/anchorsSlice';
 import { LoadingOverlay, ErrorDialog } from '@/components/Common';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ElevenLabsVoiceProvider } from '@/providers/ElevenLabsVoiceProvider';
+import { ThemeProvider } from '@/theme';
 import { QueryClient, onlineManager, focusManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
@@ -121,8 +122,8 @@ export default function RootLayout(): JSX.Element {
           <Provider store={store}>
             <PersistGate
               loading={
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0F1419' }}>
-                  <Text style={{ color: '#fff' }}>Loading...</Text>
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
+                  <Text style={{ color: '#1A2332' }}>Loading...</Text>
                 </View>
               }
               persistor={persistor}
@@ -146,24 +147,30 @@ export default function RootLayout(): JSX.Element {
                 }
               }}
             >
-              <ElevenLabsVoiceProvider>
-                <View style={{ flex: 1 }}>
-                  <StatusBar style="auto" />
-                  <Stack
-                    screenOptions={{
-                      headerShown: false,
-                    }}
-                  >
-                    <Stack.Screen name="index" options={{ headerShown: false }} />
-                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                    <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-                    <Stack.Screen name="auth" options={{ headerShown: false }} />
-                    <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
-                    <Stack.Screen name="+not-found" />
-                  </Stack>
-                  <LoadingOverlay fullScreen />
-                </View>
-              </ElevenLabsVoiceProvider>
+              <ThemeProvider>
+                <ElevenLabsVoiceProvider>
+                  <View style={{ flex: 1 }}>
+                    <StatusBar style="auto" />
+                    <Stack
+                      screenOptions={{
+                        headerShown: false,
+                      }}
+                    >
+                      <Stack.Screen name="index" options={{ headerShown: false }} />
+                      <Stack.Screen name="splash" options={{ headerShown: false }} />
+                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+                      <Stack.Screen name="auth" options={{ headerShown: false }} />
+                      <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
+                      <Stack.Screen name="route-display/index" options={{ headerShown: false }} />
+                      <Stack.Screen name="voice-assistant/index" options={{ headerShown: false }} />
+                      <Stack.Screen name="text-chat/index" options={{ headerShown: false }} />
+                      <Stack.Screen name="+not-found" />
+                    </Stack>
+                    <LoadingOverlay fullScreen />
+                  </View>
+                </ElevenLabsVoiceProvider>
+              </ThemeProvider>
             </PersistGate>
             <ErrorDialog />
           </Provider>

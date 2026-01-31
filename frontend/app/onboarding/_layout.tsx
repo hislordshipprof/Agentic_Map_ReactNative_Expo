@@ -1,7 +1,6 @@
-/** Stack layout for onboarding: dark background, slide transition. */
+/** Stack layout for onboarding: light background, slide transition. */
 
 import { Stack } from 'expo-router';
-import { Colors } from '@/theme';
 
 export default function OnboardingLayout() {
   return (
@@ -9,7 +8,7 @@ export default function OnboardingLayout() {
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
-        contentStyle: { backgroundColor: Colors.dark.background },
+        contentStyle: { backgroundColor: '#FFFFFF' },
       }}
     >
       <Stack.Screen name="welcome" />

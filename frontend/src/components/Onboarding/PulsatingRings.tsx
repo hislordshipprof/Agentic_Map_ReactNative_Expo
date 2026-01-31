@@ -1,4 +1,6 @@
-/** Pulsating concentric rings around a centered child (e.g. chat icon). */
+/** Pulsating concentric rings around a centered child (e.g. chat icon).
+ * Updated for light theme - teal rings on white/light background.
+ */
 
 import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
@@ -11,12 +13,11 @@ import Animated, {
   withDelay,
   Easing,
 } from 'react-native-reanimated';
-import { ColorUtils } from '@/theme';
 
 const RING_COLORS = [
-  ColorUtils.withAlpha('#14B8A6', 0.35),
-  ColorUtils.withAlpha('#14B8A6', 0.2),
-  ColorUtils.withAlpha('#14B8A6', 0.1),
+  'rgba(20, 184, 166, 0.25)',
+  'rgba(20, 184, 166, 0.15)',
+  'rgba(20, 184, 166, 0.08)',
 ];
 
 export interface PulsatingRingsProps {
@@ -29,11 +30,11 @@ export const PulsatingRings: React.FC<PulsatingRingsProps> = ({
   size = 140,
 }) => {
   const s1 = useSharedValue(1);
-  const o1 = useSharedValue(0.35);
+  const o1 = useSharedValue(0.25);
   const s2 = useSharedValue(1);
-  const o2 = useSharedValue(0.2);
+  const o2 = useSharedValue(0.15);
   const s3 = useSharedValue(1);
-  const o3 = useSharedValue(0.1);
+  const o3 = useSharedValue(0.08);
 
   useEffect(() => {
     const duration = 1800;
@@ -49,8 +50,8 @@ export const PulsatingRings: React.FC<PulsatingRingsProps> = ({
     );
     o1.value = withRepeat(
       withSequence(
-        withTiming(0.15, { duration: duration / 2, easing: outEasing }),
-        withTiming(0.35, { duration: duration / 2, easing: outEasing })
+        withTiming(0.1, { duration: duration / 2, easing: outEasing }),
+        withTiming(0.25, { duration: duration / 2, easing: outEasing })
       ),
       -1,
       false
@@ -71,8 +72,8 @@ export const PulsatingRings: React.FC<PulsatingRingsProps> = ({
       200,
       withRepeat(
         withSequence(
-          withTiming(0.08, { duration: duration / 2, easing: outEasing }),
-          withTiming(0.2, { duration: duration / 2, easing: outEasing })
+          withTiming(0.06, { duration: duration / 2, easing: outEasing }),
+          withTiming(0.15, { duration: duration / 2, easing: outEasing })
         ),
         -1,
         false
@@ -94,8 +95,8 @@ export const PulsatingRings: React.FC<PulsatingRingsProps> = ({
       400,
       withRepeat(
         withSequence(
-          withTiming(0.04, { duration: duration / 2, easing: outEasing }),
-          withTiming(0.1, { duration: duration / 2, easing: outEasing })
+          withTiming(0.03, { duration: duration / 2, easing: outEasing }),
+          withTiming(0.08, { duration: duration / 2, easing: outEasing })
         ),
         -1,
         false
