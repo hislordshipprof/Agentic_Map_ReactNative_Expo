@@ -71,6 +71,8 @@ export interface UserInputFieldProps {
   style?: ViewStyle;
   /** Maximum input length */
   maxLength?: number;
+  /** Disable wrapper padding (for inline usage) */
+  disableWrapperPadding?: boolean;
 }
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
@@ -89,6 +91,7 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
   isRecording = false,
   style,
   maxLength = 500,
+  disableWrapperPadding = false,
 }) => {
   const [text, setText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -234,7 +237,7 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
   const canSend = text.trim().length > 0 && !disabled && !isLoading;
 
   return (
-    <View style={[styles.wrapper, style]}>
+    <View style={[!disableWrapperPadding && styles.wrapper, style]}>
       <Animated.View style={[styles.container, containerAnimatedStyle]}>
         {/* Text input */}
         <TextInput

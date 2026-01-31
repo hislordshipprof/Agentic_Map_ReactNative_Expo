@@ -31,7 +31,6 @@ import Animated, {
   SlideInDown,
   SlideOutDown,
 } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { GlassCard } from '@/components/Common';
 import {
@@ -198,22 +197,33 @@ export const RouteOptionsSheet: React.FC<RouteOptionsSheetProps> = ({
   // Reset selection when options change
   useEffect(() => {
     if (options.length > 0) {
-      setSelectedId(getInitialSelection());
+      const initialId = getInitialSelection();
+      console.log('[RouteOptionsSheet] Options received:', options.length, 'initial:', initialId);
+      setSelectedId(initialId);
     }
   }, [options]);
 
   const handleConfirm = () => {
+    console.log('[RouteOptionsSheet] handleConfirm called, selectedId:', selectedId);
+    console.log('[RouteOptionsSheet] options count:', options.length);
     const selected = options.find((o) => o.id === selectedId);
+    console.log('[RouteOptionsSheet] found selected:', selected ? selected.label : 'NOT FOUND');
     if (selected) {
+      console.log('[RouteOptionsSheet] calling onSelect with:', selected.id, selected.label);
+      console.log('[RouteOptionsSheet] selected.route exists:', !!selected.route);
       onSelect(selected);
+    } else {
+      console.warn('[RouteOptionsSheet] No option selected!');
     }
   };
 
   const handleButtonPressIn = () => {
+    console.log('[RouteOptionsSheet] Button press IN');
     buttonScale.value = withSpring(0.95, SpringConfig.snappy);
   };
 
   const handleButtonPressOut = () => {
+    console.log('[RouteOptionsSheet] Button press OUT');
     buttonScale.value = withSpring(1, SpringConfig.bouncy);
   };
 
@@ -238,10 +248,8 @@ export const RouteOptionsSheet: React.FC<RouteOptionsSheetProps> = ({
         exiting={FadeOut.duration(200)}
         style={styles.overlay}
       >
-        {/* Backdrop */}
-        <Pressable style={styles.backdrop} onPress={onDismiss}>
-          <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-        </Pressable>
+        {/* Backdrop - solid dark overlay for better visibility on Android */}
+        <Pressable style={styles.backdrop} onPress={onDismiss} />
 
         {/* Sheet Content */}
         <Animated.View
@@ -287,7 +295,10 @@ export const RouteOptionsSheet: React.FC<RouteOptionsSheetProps> = ({
                   key={option.id}
                   option={option}
                   isSelected={selectedId === option.id}
-                  onSelect={() => setSelectedId(option.id)}
+                  onSelect={() => {
+                    console.log('[RouteOptionsSheet] Card selected:', option.id, option.label);
+                    setSelectedId(option.id);
+                  }}
                   index={index}
                 />
               ))}
@@ -319,7 +330,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: Colors.effects.overlayDark,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)', // Solid dark overlay for Android compatibility
   },
   sheetContainer: {
     maxHeight: SCREEN_HEIGHT * 0.85,

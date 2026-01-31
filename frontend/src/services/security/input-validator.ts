@@ -92,8 +92,10 @@ class InputValidatorService {
       };
     }
 
-    // Basic sanitization (escape HTML entities)
-    sanitized = this.escapeHtml(sanitized);
+    // Note: HTML entity escaping is NOT applied here because React Native
+    // <Text> renders strings literally (no HTML parsing), so escaping would
+    // show raw entities like &#x27; to the user. The dangerous pattern check
+    // above already blocks script injection attempts.
 
     // Normalize whitespace
     sanitized = this.normalizeWhitespace(sanitized);

@@ -179,10 +179,18 @@ const routeSlice = createSlice({
         destinationName?: string;
       }>
     ) => {
-      state.routeOptions = action.payload.options;
+      const opts = action.payload.options;
+      console.log('[routeSlice] setRouteOptions - count:', opts.length);
+      opts.forEach((opt, i) => {
+        console.log(`[routeSlice] Option ${i}: id=${opt.id}, label=${opt.label}, route exists=${!!opt.route}`);
+        if (opt.route) {
+          console.log(`[routeSlice] Option ${i} route: stops=${opt.route.stops?.length || 0}, polyline=${!!opt.route.polyline}`);
+        }
+      });
+      state.routeOptions = opts;
       state.destinationName = action.payload.destinationName ?? null;
       // Auto-show options if more than 1
-      state.showRouteOptions = action.payload.options.length > 1;
+      state.showRouteOptions = opts.length > 1;
     },
 
     /**
@@ -204,12 +212,20 @@ const routeSlice = createSlice({
      */
     selectRouteOption: (state, action: PayloadAction<RouteOption>) => {
       const option = action.payload;
+      console.log('[routeSlice] selectRouteOption - option.id:', option?.id);
+      console.log('[routeSlice] selectRouteOption - option.route exists:', !!option?.route);
+      if (!option?.route) {
+        console.error('[routeSlice] selectRouteOption - MISSING ROUTE DATA!');
+        state.error = 'Route data missing from selected option';
+        return;
+      }
+      console.log('[routeSlice] selectRouteOption - setting pending route with', option.route.stops?.length || 0, 'stops');
       state.pending = option.route;
-      state.waypoints = option.route.waypoints;
-      state.stops = option.route.stops;
-      state.totalDistance = option.route.totalDistance;
-      state.totalTime = option.route.totalTime;
-      state.polyline = option.route.polyline;
+      state.waypoints = option.route.waypoints || [];
+      state.stops = option.route.stops || [];
+      state.totalDistance = option.route.totalDistance || 0;
+      state.totalTime = option.route.totalTime || 0;
+      state.polyline = option.route.polyline || null;
       state.showRouteOptions = false;
       state.isLoading = false;
       state.error = null;
