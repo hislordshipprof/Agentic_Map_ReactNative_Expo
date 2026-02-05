@@ -29,3 +29,5 @@ export type { RouteOptionsSheetProps } from './RouteOptionsSheet';
 export { RouteTimeline } from './RouteTimeline';
 export { OptimizationBadge } from './OptimizationBadge';
 export { StatCards } from './StatCards';
+export { RouteSummarySheet } from './RouteSummarySheet';
+export type { RouteSummarySheetProps } from './RouteSummarySheet';

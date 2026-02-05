@@ -12,8 +12,8 @@ export type { GlassCardProps } from './GlassCard';
 export { ActionChip, ActionChipGroup } from './ActionChip';
 export type { ActionChipProps, ActionChipGroupProps } from './ActionChip';
 
-export { LoadingIndicator, ThinkingBubble } from './LoadingIndicator';
-export type { LoadingIndicatorProps } from './LoadingIndicator';
+export { LoadingIndicator, ThinkingBubble, ProcessingBubble } from './LoadingIndicator';
+export type { LoadingIndicatorProps, ProcessingBubbleProps } from './LoadingIndicator';
 
 export { LoadingOverlay, MinimalLoader, LoadingText } from './LoadingOverlay';
 export type { LoadingOverlayProps } from './LoadingOverlay';

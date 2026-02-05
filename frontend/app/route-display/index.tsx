@@ -1,61 +1,90 @@
 /**
  * Route Display Screen
  *
- * Moved from (tabs)/route.tsx to a stack screen.
- * Shows route confirmation, adjustment, and add/replace stops.
+ * Shows route summary with map, recommended route, alternative routes,
+ * and Start Navigation CTA that opens Google Maps directly.
  */
 
-import { useState, useCallback } from 'react';
-import { Text, StyleSheet, Alert } from 'react-native';
+import { useState, useMemo } from 'react';
+import { View, StyleSheet, Text, Linking, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
-import { RouteConfirmationScreen } from '@/components/Route';
-import { AdjustmentMode, AddStopForm } from '@/components/Adjustment';
-import type { AddStopPlace } from '@/components/Adjustment';
+import { RouteMap, RouteSummarySheet } from '@/components/Route';
 import { useRoute } from '@/hooks';
-import { errandApi } from '@/services/api/errand';
 import { useThemeColors } from '@/theme/useThemeColors';
 import { Spacing, FontFamily, FontSize } from '@/theme';
-import { getDetourStatus } from '@/types/route';
-import type { RouteStop } from '@/types/route';
+import type { RouteOption } from '@/types/route';
 
-export default function RouteDisplayScreen(): JSX.Element {
+/**
+ * Build Google Maps URL with navigation auto-start
+ */
+function buildGoogleMapsNavigationUrl(
+  origin: { lat: number; lng: number },
+  destination: { lat: number; lng: number },
+  stops: Array<{ location: { lat: number; lng: number } }>
+): string {
+  const o = `${origin.lat},${origin.lng}`;
+  const d = `${destination.lat},${destination.lng}`;
+  const wp = stops.map((s) => `${s.location.lat},${s.location.lng}`).join('|');
+  
+  const params = new URLSearchParams({
+    api: '1',
+    origin: o,
+    destination: d,
+    ...(wp && { waypoints: wp }),
+    dir_action: 'navigate', // Auto-start navigation
+  });
+  
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+export default function RouteDisplayScreen(): React.ReactElement {
   const router = useRouter();
   const colors = useThemeColors();
+  const { height: screenHeight } = useWindowDimensions();
   const {
     pending,
     confirmed,
     stops,
+    routeOptions,
     isLoading,
-    adjustmentMode,
     confirm,
     clear,
-    setPending,
-    enterAdjustment,
-    exitAdjustment,
-    addStop,
-    removeStop,
-    reorderStops,
-    setLoading,
-    setError,
+    selectRouteOption,
   } = useRoute();
 
-  const [addStopFormVisible, setAddStopFormVisible] = useState(false);
-  const [replaceContext, setReplaceContext] = useState<{ stopId: string; stopName: string } | null>(null);
+  const [mapExpanded, setMapExpanded] = useState(false);
+
+  // Bottom sheet starts at 50% — pad the map so the route is visible above the sheet
+  const mapFitPadding = useMemo(() => ({
+    top: 80,
+    right: 60,
+    bottom: Math.round(screenHeight * 0.55),
+    left: 60,
+  }), [screenHeight]);
 
   const baseRoute = pending || confirmed;
-  const routeWithStops = baseRoute ? { ...baseRoute, stops } : null;
 
-  const handleAccept = () => {
+  const handleStartNavigation = () => {
+    if (!baseRoute) return;
+    
+    // Confirm the route in Redux
     confirm();
-    router.push('/navigation' as never);
-  };
-
-  const handleAdjust = () => {
-    enterAdjustment();
+    
+    // Build Google Maps URL with all stops and auto-navigate
+    const url = buildGoogleMapsNavigationUrl(
+      baseRoute.origin.location,
+      baseRoute.destination.location,
+      stops
+    );
+    
+    // Open Google Maps directly
+    Linking.openURL(url).catch((err) => {
+      console.error('Failed to open Google Maps:', err);
+    });
   };
 
   const handleCancel = () => {
@@ -63,147 +92,32 @@ export default function RouteDisplayScreen(): JSX.Element {
     router.back();
   };
 
-  const handleReoptimize = useCallback(async (overrideStops?: RouteStop[]) => {
-    if (!baseRoute) return;
-    const list = overrideStops ?? routeWithStops?.stops ?? [];
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await errandApi.recalculateRoute({
-        origin: baseRoute.origin.location,
-        destination: baseRoute.destination.location,
-        stops: list.map((s) => ({ placeId: s.id, lat: s.location.lat, lng: s.location.lng })),
-      });
-      if (!res.success || res.error) {
-        setError(res.error?.message ?? 'Could not recalculate route');
-        return;
-      }
-      const route = res.data?.route;
-      if (route) setPending(route);
-      else setError('Could not recalculate route');
-    } catch (e) {
-      setError((e as Error).message || 'Recalculate failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [baseRoute, routeWithStops, setPending, setLoading, setError]);
+  const handleSelectOption = (option: RouteOption) => {
+    selectRouteOption(option);
+  };
 
-  const handlePreview = useCallback(async () => {
-    if (!baseRoute || !routeWithStops) return;
-    try {
-      const res = await errandApi.previewRoute({
-        origin: baseRoute.origin.location,
-        destination: baseRoute.destination.location,
-        stops: routeWithStops.stops.map((s) => ({ placeId: s.id, lat: s.location.lat, lng: s.location.lng })),
-      });
-      if (!res.success || res.error) {
-        Alert.alert('Preview', res.error?.message ?? 'Could not load preview.');
-        return;
-      }
-      const d = res.data;
-      if (d) {
-        Alert.alert('Route preview', `Distance: ${(d.totalDistance ?? 0).toFixed(1)} mi\nDuration: ~${Math.round(d.totalDuration ?? 0)} min`);
-      } else {
-        Alert.alert('Preview', 'Could not load preview.');
-      }
-    } catch {
-      Alert.alert('Preview', 'Preview unavailable.');
-    }
-  }, [baseRoute, routeWithStops]);
-
-  const handleAdd = useCallback(() => {
-    setReplaceContext(null);
-    setAddStopFormVisible(true);
-  }, []);
-
-  const handleReplace = useCallback((stopId: string) => {
-    const name = routeWithStops?.stops.find((s) => s.id === stopId)?.name ?? 'stop';
-    setReplaceContext({ stopId, stopName: name });
-    setAddStopFormVisible(true);
-  }, [routeWithStops]);
-
-  const handleAddStopSelect = useCallback((place: AddStopPlace) => {
-    if (!baseRoute) return;
-    const newStop: RouteStop = {
-      id: place.placeId,
-      name: place.name,
-      address: place.address,
-      location: place.location,
-      mileMarker: 0,
-      detourCost: 0,
-      status: getDetourStatus(0, baseRoute.detourBudget.total),
-      order: (routeWithStops?.stops.length ?? 0) + 1,
-    };
-    addStop(newStop);
-    setAddStopFormVisible(false);
-    setReplaceContext(null);
-    handleReoptimize([...(routeWithStops?.stops ?? []), newStop]);
-  }, [baseRoute, routeWithStops, addStop, handleReoptimize]);
-
-  const handleReplaceSelect = useCallback((place: AddStopPlace) => {
-    if (!replaceContext || !routeWithStops) return;
-    const newStop: RouteStop = {
-      id: place.placeId,
-      name: place.name,
-      address: place.address,
-      location: place.location,
-      mileMarker: 0,
-      detourCost: 0,
-      status: 'NO_DETOUR',
-      order: 1,
-    };
-    const next = routeWithStops.stops.map((s) => (s.id === replaceContext.stopId ? newStop : s));
-    reorderStops(next);
-    setAddStopFormVisible(false);
-    setReplaceContext(null);
-    handleReoptimize(next);
-  }, [replaceContext, routeWithStops, reorderStops, handleReoptimize]);
-
-  const handleAddStopFormSelect = replaceContext ? handleReplaceSelect : handleAddStopSelect;
-
-  if (baseRoute && adjustmentMode) {
+  if (baseRoute && !mapExpanded) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background.primary }]} edges={['top']}>
-        <AdjustmentMode
-          route={routeWithStops!}
-          onReoptimize={handleReoptimize}
-          onPreview={handlePreview}
-          onDone={exitAdjustment}
-          onRemove={removeStop}
-          onReorder={reorderStops}
-          onAdd={handleAdd}
-          onReplace={handleReplace}
-          isOptimizing={isLoading}
+      <View style={styles.container}>
+        {/* Full-screen map behind the bottom sheet */}
+        <RouteMap
+          route={baseRoute}
+          stops={stops}
+          fillScreen
+          fitPadding={mapFitPadding}
+          showUserLocation
+          showOptimization
         />
-        {addStopFormVisible && (
-          <AddStopForm
-            onSelect={handleAddStopFormSelect}
-            onCancel={() => { setAddStopFormVisible(false); setReplaceContext(null); }}
-            mode={replaceContext ? 'replace' : 'add'}
-            replaceStopName={replaceContext?.stopName}
-            location={
-              baseRoute?.origin?.location
-              ?? routeWithStops?.stops?.[0]?.location
-              ?? undefined
-            }
-          />
-        )}
-      </SafeAreaView>
-    );
-  }
 
-  if (baseRoute) {
-    const displayRoute = routeWithStops || baseRoute;
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background.primary }]} edges={['top']}>
-        <RouteConfirmationScreen
-          route={displayRoute}
-          onAccept={handleAccept}
-          onAdjust={handleAdjust}
+        {/* Bottom Sheet */}
+        <RouteSummarySheet
+          route={baseRoute}
+          routeOptions={routeOptions}
+          onStartNavigation={handleStartNavigation}
           onCancel={handleCancel}
-          isLoading={isLoading}
+          onSelectOption={handleSelectOption}
         />
-      </SafeAreaView>
+      </View>
     );
   }
 

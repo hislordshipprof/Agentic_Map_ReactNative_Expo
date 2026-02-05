@@ -9,6 +9,7 @@
  * - Spinner with teal gradient
  * - Shimmer effect for skeleton loading
  * - Typing indicator for chat
+ * - ProcessingBubble for themed processing state
  */
 
 import React, { useEffect } from 'react';
@@ -22,9 +23,11 @@ import Animated, {
   withDelay,
   Easing,
   cancelAnimation,
+  FadeInDown,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors, Spacing, FontFamily, FontSize } from '@/theme';
+import { Colors, Spacing, FontFamily, FontSize, Layout } from '@/theme';
+import type { ThemePalette } from '@/theme/palettes';
 
 /**
  * LoadingIndicator Props
@@ -328,6 +331,91 @@ export const ThinkingBubble: React.FC<{
     </View>
   );
 };
+
+/**
+ * ProcessingBubble - Theme-aware processing indicator for text chat.
+ *
+ * Left-aligned system-style bubble with a teal spinner and phase text.
+ * Designed to replace ThinkingBubble in themed screens.
+ */
+export interface ProcessingBubbleProps {
+  /** Processing phase text, e.g. "Understanding your request..." */
+  phase?: string;
+  /** Theme palette for colors */
+  colors: ThemePalette;
+  /** Custom styles */
+  style?: ViewStyle;
+}
+
+export const ProcessingBubble: React.FC<ProcessingBubbleProps> = ({
+  phase = 'Processing...',
+  colors,
+  style,
+}) => {
+  return (
+    <Animated.View
+      entering={FadeInDown.duration(300).springify()}
+      style={[
+        processingStyles.container,
+        style,
+      ]}
+    >
+      <View
+        style={[
+          processingStyles.bubble,
+          {
+            backgroundColor: colors.message.system,
+            borderColor: colors.message.systemBorder,
+            shadowColor: colors.effects.shadow,
+          },
+        ]}
+      >
+        <View style={processingStyles.row}>
+          <Spinner size={22} color={colors.primary.teal} />
+          <Text
+            style={[
+              processingStyles.phaseText,
+              { color: colors.primary.teal },
+            ]}
+          >
+            {phase}
+          </Text>
+        </View>
+      </View>
+    </Animated.View>
+  );
+};
+
+const processingStyles = StyleSheet.create({
+  container: {
+    width: '100%',
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    alignItems: 'flex-start',
+  },
+  bubble: {
+    maxWidth: '80%',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderRadius: Layout.radiusLarge,
+    borderBottomLeftRadius: Spacing.xs,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  phaseText: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.primary,
+    fontWeight: '500',
+  },
+});
 
 const styles = StyleSheet.create({
   container: {

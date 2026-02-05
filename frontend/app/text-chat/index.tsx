@@ -3,6 +3,8 @@
  *
  * Extracted from the original (tabs)/index.tsx conversation interface.
  * Full NLU flow with text input, conversation messages, and route planning.
+ *
+ * Uses pastel gradient background and theme-aware chat components.
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -12,25 +14,31 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Animated, { FadeInUp } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 import { AnimatedMessage } from '@/components/Conversation';
 import type { Message } from '@/components/Conversation';
 import { useNLUFlow, useLocation, useNavigateWithStops, useUserAnchors } from '@/hooks';
-import { ThinkingBubble } from '@/components/Common';
+import { ProcessingTimeline } from '@/components/Chat/ProcessingTimeline';
+import { RoutePlanningFlow } from '@/components/Chat/RoutePlanningFlow';
+import { RouteResultCard } from '@/components/Chat/RouteResultCard';
 import { UserInputField } from '@/components/Input';
 import { ConfirmationDialog, AlternativesDialog, DEFAULT_ALTERNATIVES } from '@/components/Dialogs';
-import { RouteOptionsSheet } from '@/components/Route';
 import { AddressInputBubble } from '@/components/Chat/AddressInputBubble';
 import { errandApi, checkBackendConnectivity, userApi } from '@/services/api';
 import { useThemeColors } from '@/theme/useThemeColors';
 import { Spacing, FontFamily, FontSize } from '@/theme';
 import type { Entities } from '@/types/nlu';
+import { isNavigationIntent } from '@/types/nlu';
 import type { AnchorType } from '@/types/user';
+import type { Route, RouteOption } from '@/types/route';
 
 function entitiesToConfirmation(entities: Entities): { destination?: string; stops?: string[] } {
   return {
@@ -58,7 +66,6 @@ export default function TextChatScreen(): JSX.Element {
   const {
     currentLocation,
     address,
-    locationStatus,
     locationError,
     isLoading: locationLoading,
   } = useLocation();
@@ -68,11 +75,36 @@ export default function TextChatScreen(): JSX.Element {
   const [isLoading, setIsLoading] = useState(false);
   const [processingPhase, setProcessingPhase] = useState<'idle' | 'understanding' | 'planning_route'>('idle');
   const escalationInProgressRef = useRef(false);
+  const navigationInProgressRef = useRef(false);
+  const scrollViewRef = useRef<ScrollView>(null);
   const [awaitingAddress, setAwaitingAddress] = useState<{
     anchorType: string;
     pendingEntities: Entities;
     pendingOrigin: { lat: number; lng: number };
   } | null>(null);
+  const [routeResult, setRouteResult] = useState<{
+    route?: Route;
+    routeOptions?: RouteOption[];
+    destinationName?: string;
+  } | null>(null);
+
+  // Auto-scroll to bottom when messages change or loading state changes
+  const scrollToBottom = useCallback(() => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading, processingPhase, routeResult, scrollToBottom]);
+
+  // Re-scroll periodically during loading to catch timeline growth
+  useEffect(() => {
+    if (!isLoading) return;
+    const interval = setInterval(scrollToBottom, 1200);
+    return () => clearInterval(interval);
+  }, [isLoading, scrollToBottom]);
 
   const appendSystem = useCallback((text: string) => {
     setMessages((prev) => [
@@ -92,29 +124,54 @@ export default function TextChatScreen(): JSX.Element {
     doNavigate,
     resetNavigateGuard,
     handleRouteOptionSelect,
-    handleRouteOptionsDismiss,
-    routeOptions,
-    showRouteOptions,
-    routeDestinationName,
-  } = useNavigateWithStops({ onSystemMessage: appendSystem, onAnchorNotSet: handleAnchorNotSet });
+  } = useNavigateWithStops({
+    onSystemMessage: appendSystem,
+    onAnchorNotSet: handleAnchorNotSet,
+    autoNavigate: false,
+  });
 
-  // Conversational response
+  // Conversational response — also reset loading since no navigation will happen
   useEffect(() => {
     if (flowState === 'conversational' && lastMessage) {
       appendSystem(lastMessage);
+      setProcessingPhase('idle');
+      setIsLoading(false);
     }
   }, [flowState, lastMessage, appendSystem]);
 
-  // HIGH confidence: navigate
+  // Non-navigation flows (confirmation/alternatives dialogs) — reset loading
   useEffect(() => {
-    if (
-      flowState !== 'high_confidence' ||
-      intent !== 'navigate_with_stops' ||
-      !entities.destination
-    ) return;
+    if (flowState === 'confirmation_required' || flowState === 'alternatives_required') {
+      setProcessingPhase('idle');
+      setIsLoading(false);
+    }
+  }, [flowState]);
+
+  // HIGH confidence: navigate (handles navigate_with_stops, navigate_direct, modify_route)
+  useEffect(() => {
+    if (flowState !== 'high_confidence') {
+      navigationInProgressRef.current = false;
+      return;
+    }
+    if (!intent || !isNavigationIntent(intent) || !entities.destination) {
+      // Non-navigation high confidence (e.g. set_anchor) — reset loading
+      setProcessingPhase('idle');
+      setIsLoading(false);
+      return;
+    }
+    if (navigationInProgressRef.current) return;
+    navigationInProgressRef.current = true;
     setProcessingPhase('planning_route');
     setIsLoading(true);
-    doNavigate(entities, currentLocation).finally(() => {
+    doNavigate(entities, currentLocation).then((result) => {
+      if (result.success) {
+        setRouteResult({
+          route: result.route,
+          routeOptions: result.routeOptions,
+          destinationName: result.destinationName,
+        });
+      }
+    }).finally(() => {
       setProcessingPhase('idle');
       setIsLoading(false);
     });
@@ -133,11 +190,19 @@ export default function TextChatScreen(): JSX.Element {
     errandApi
       .escalateToLLM({ utterance, conversationHistory, currentLocation: currentLocation ?? undefined })
       .then((res) => {
-        if (res.success && res.data) onNLUResponse(res.data);
-        else appendSystem(res.error?.message ?? 'Escalation failed.');
+        if (res.success && res.data) {
+          onNLUResponse(res.data);
+          // onNLUResponse will set flowState → appropriate effects handle loading
+        } else {
+          appendSystem(res.error?.message ?? 'Escalation failed.');
+          setProcessingPhase('idle');
+          setIsLoading(false);
+        }
       })
       .catch((e) => {
         appendSystem(e instanceof Error ? e.message : 'Escalation failed.');
+        setProcessingPhase('idle');
+        setIsLoading(false);
       })
       .finally(() => {
         escalationInProgressRef.current = false;
@@ -179,6 +244,8 @@ export default function TextChatScreen(): JSX.Element {
       }
 
       resetNavigateGuard();
+      navigationInProgressRef.current = false;
+      setRouteResult(null);
       setProcessingPhase('understanding');
       setIsLoading(true);
       try {
@@ -190,9 +257,12 @@ export default function TextChatScreen(): JSX.Element {
           content: m.text,
         }));
         await processUtterance(text, currentLocation ?? undefined, conversationHistory);
+        // Don't reset loading here — flow-specific effects handle transitions:
+        // - high_confidence + navigation → planning_route effect
+        // - conversational → conversational effect
+        // - confirmation/alternatives → dialog effect
       } catch (e) {
         appendSystem(e instanceof Error ? e.message : 'Something went wrong.');
-      } finally {
         setProcessingPhase('idle');
         setIsLoading(false);
       }
@@ -227,7 +297,14 @@ export default function TextChatScreen(): JSX.Element {
       setProcessingPhase('planning_route');
       setIsLoading(true);
       try {
-        await doNavigate(pending.pendingEntities, pending.pendingOrigin);
+        const navResult = await doNavigate(pending.pendingEntities, pending.pendingOrigin);
+        if (navResult.success) {
+          setRouteResult({
+            route: navResult.route,
+            routeOptions: navResult.routeOptions,
+            destinationName: navResult.destinationName,
+          });
+        }
       } finally {
         setProcessingPhase('idle');
         setIsLoading(false);
@@ -247,11 +324,32 @@ export default function TextChatScreen(): JSX.Element {
 
   const handleConfirmThenNavigate = useCallback(() => {
     confirmCurrentIntent();
-    doNavigate(entities, currentLocation);
+    setProcessingPhase('planning_route');
+    setIsLoading(true);
+    doNavigate(entities, currentLocation).then((result) => {
+      if (result.success) {
+        setRouteResult({
+          route: result.route,
+          routeOptions: result.routeOptions,
+          destinationName: result.destinationName,
+        });
+      }
+    }).finally(() => {
+      setProcessingPhase('idle');
+      setIsLoading(false);
+    });
   }, [confirmCurrentIntent, doNavigate, entities, currentLocation]);
 
+  const pastelGradient = colors.gradients.pastelScreen;
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background.primary }]}>
+    <LinearGradient
+      colors={[...pastelGradient.colors]}
+      locations={[...pastelGradient.locations]}
+      start={pastelGradient.start}
+      end={pastelGradient.end}
+      style={styles.container}
+    >
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         {/* Header */}
         <View style={[styles.headerRow, { borderBottomColor: colors.border.default }]}>
@@ -262,11 +360,19 @@ export default function TextChatScreen(): JSX.Element {
           <View style={{ width: 44 }} />
         </View>
 
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoid}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
         {/* Messages */}
         <ScrollView
+          ref={scrollViewRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
         >
           {messages.length === 0 && (
             <Animated.View entering={FadeInUp.delay(100).duration(400)} style={styles.emptyState}>
@@ -286,6 +392,7 @@ export default function TextChatScreen(): JSX.Element {
               message={message}
               index={index}
               showTimestamp
+              colors={colors}
             />
           ))}
 
@@ -297,18 +404,31 @@ export default function TextChatScreen(): JSX.Element {
             />
           )}
 
-          {isLoading && (
-            <View style={styles.thinkingContainer}>
-              <ThinkingBubble
-                message={
-                  processingPhase === 'understanding'
-                    ? 'Understanding your request...'
-                    : processingPhase === 'planning_route'
-                      ? 'Finding the best stops and route...'
-                      : undefined
-                }
-              />
-            </View>
+          {isLoading && processingPhase === 'understanding' && (
+            <ProcessingTimeline
+              mode="understanding"
+              colors={colors}
+            />
+          )}
+
+          {isLoading && processingPhase === 'planning_route' && (
+            <RoutePlanningFlow entities={entities} colors={colors} />
+          )}
+
+          {routeResult && !isLoading && (
+            <RouteResultCard
+              route={routeResult.route}
+              routeOptions={routeResult.routeOptions}
+              destinationName={routeResult.destinationName}
+              colors={colors}
+              onNavigate={(option) => {
+                if (option) handleRouteOptionSelect(option);
+                router.push('/route-display');
+              }}
+              onAdjust={() => {
+                router.push('/route-display');
+              }}
+            />
           )}
         </ScrollView>
 
@@ -322,8 +442,10 @@ export default function TextChatScreen(): JSX.Element {
             showVoiceButton={false}
             placeholder="Type your request..."
             disableWrapperPadding
+            colors={colors}
           />
         </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
 
       <ConfirmationDialog
@@ -350,20 +472,14 @@ export default function TextChatScreen(): JSX.Element {
         onDismiss={rejectAndRephrase}
       />
 
-      <RouteOptionsSheet
-        visible={showRouteOptions}
-        options={routeOptions}
-        onSelect={handleRouteOptionSelect}
-        onDismiss={handleRouteOptionsDismiss}
-        destinationName={routeDestinationName ?? undefined}
-      />
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
+  keyboardAvoid: { flex: 1 },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -405,10 +521,6 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     textAlign: 'center',
     maxWidth: 300,
-  },
-  thinkingContainer: {
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
   },
   inputArea: {
     paddingHorizontal: Spacing.lg,

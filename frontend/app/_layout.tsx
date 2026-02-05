@@ -161,7 +161,6 @@ export default function RootLayout(): JSX.Element {
                       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
                       <Stack.Screen name="auth" options={{ headerShown: false }} />
-                      <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
                       <Stack.Screen name="route-display/index" options={{ headerShown: false }} />
                       <Stack.Screen name="voice-assistant/index" options={{ headerShown: false }} />
                       <Stack.Screen name="text-chat/index" options={{ headerShown: false }} />

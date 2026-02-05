@@ -16,14 +16,18 @@ import type { Route, RouteOption } from '@/types/route';
 interface UseNavigateWithStopsOptions {
   onSystemMessage: (text: string) => void;
   onAnchorNotSet?: (anchorType: string, pendingEntities: Entities, pendingOrigin: { lat: number; lng: number }) => void;
+  /** When false, skip auto-navigation to route-display. Default: true */
+  autoNavigate?: boolean;
 }
 
 interface NavigateResult {
   success: boolean;
   routeOptions?: RouteOption[];
+  route?: Route;
+  destinationName?: string;
 }
 
-export function useNavigateWithStops({ onSystemMessage, onAnchorNotSet }: UseNavigateWithStopsOptions) {
+export function useNavigateWithStops({ onSystemMessage, onAnchorNotSet, autoNavigate = true }: UseNavigateWithStopsOptions) {
   const router = useRouter();
   const {
     setPending,
@@ -77,13 +81,16 @@ export function useNavigateWithStops({ onSystemMessage, onAnchorNotSet }: UseNav
           return { success: false };
         }
 
+        const destName = data.destination?.name || ent.destination;
         if (data.routeOptions && data.routeOptions.length > 1) {
-          setRouteOptions(data.routeOptions, data.destination?.name || ent.destination);
+          if (autoNavigate) {
+            setRouteOptions(data.routeOptions, destName);
+          }
           const n = data.route.stops?.length ?? 0;
           onSystemMessage(
             `Found ${data.routeOptions.length} route options with ${n} stop${n !== 1 ? 's' : ''}. Please select your preferred route.`
           );
-          return { success: true, routeOptions: data.routeOptions };
+          return { success: true, routeOptions: data.routeOptions, route: data.route, destinationName: destName };
         } else {
           setPending(data.route);
           const n = data.route.stops?.length ?? 0;
@@ -91,8 +98,10 @@ export function useNavigateWithStops({ onSystemMessage, onAnchorNotSet }: UseNav
           onSystemMessage(
             `Route ready. ${n} stop${n !== 1 ? 's' : ''}.${excl ? ` Some stops were excluded: ${excl}.` : ''}`
           );
-          router.push('/route-display');
-          return { success: true };
+          if (autoNavigate) {
+            router.push('/route-display');
+          }
+          return { success: true, route: data.route, destinationName: destName };
         }
       } catch (e: unknown) {
         navigateDoneRef.current = false;
@@ -118,9 +127,11 @@ export function useNavigateWithStops({ onSystemMessage, onAnchorNotSet }: UseNav
       onSystemMessage(
         `Selected ${option.label}. ${option.stops.length} stop${option.stops.length !== 1 ? 's' : ''} - ${Math.round(option.totalTimeMin)} min total.`
       );
-      router.push('/route-display');
+      if (autoNavigate) {
+        router.push('/route-display');
+      }
     },
-    [selectRouteOption, onSystemMessage, router]
+    [selectRouteOption, onSystemMessage, router, autoNavigate]
   );
 
   const handleRouteOptionsDismiss = useCallback(() => {
