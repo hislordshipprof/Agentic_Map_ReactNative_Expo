@@ -32,6 +32,7 @@ import { RouteResultCard } from '@/components/Chat/RouteResultCard';
 import { UserInputField } from '@/components/Input';
 import { ConfirmationDialog, AlternativesDialog, DEFAULT_ALTERNATIVES } from '@/components/Dialogs';
 import { AddressInputBubble } from '@/components/Chat/AddressInputBubble';
+import { SuggestionMessage } from '@/components/Chat/SuggestionMessage';
 import { errandApi, checkBackendConnectivity, userApi } from '@/services/api';
 import { useThemeColors } from '@/theme/useThemeColors';
 import { Spacing, FontFamily, FontSize } from '@/theme';
@@ -39,6 +40,7 @@ import type { Entities } from '@/types/nlu';
 import { isNavigationIntent } from '@/types/nlu';
 import type { AnchorType } from '@/types/user';
 import type { Route, RouteOption } from '@/types/route';
+import type { DestinationSuggestion } from '@/types/api';
 
 function entitiesToConfirmation(entities: Entities): { destination?: string; stops?: string[] } {
   return {
@@ -87,6 +89,10 @@ export default function TextChatScreen(): JSX.Element {
     routeOptions?: RouteOption[];
     destinationName?: string;
   } | null>(null);
+  const [suggestionState, setSuggestionState] = useState<{
+    suggestions: DestinationSuggestion[];
+    pendingEntities: Entities;
+  } | null>(null);
 
   // Auto-scroll to bottom when messages change or loading state changes
   const scrollToBottom = useCallback(() => {
@@ -97,7 +103,7 @@ export default function TextChatScreen(): JSX.Element {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading, processingPhase, routeResult, scrollToBottom]);
+  }, [messages, isLoading, processingPhase, routeResult, suggestionState, scrollToBottom]);
 
   // Re-scroll periodically during loading to catch timeline growth
   useEffect(() => {
@@ -120,6 +126,13 @@ export default function TextChatScreen(): JSX.Element {
     [],
   );
 
+  const handleSuggestions = useCallback(
+    (suggestions: DestinationSuggestion[], pendingEntities: Entities) => {
+      setSuggestionState({ suggestions, pendingEntities });
+    },
+    [],
+  );
+
   const {
     doNavigate,
     resetNavigateGuard,
@@ -127,6 +140,7 @@ export default function TextChatScreen(): JSX.Element {
   } = useNavigateWithStops({
     onSystemMessage: appendSystem,
     onAnchorNotSet: handleAnchorNotSet,
+    onSuggestions: handleSuggestions,
     autoNavigate: false,
   });
 
@@ -246,6 +260,7 @@ export default function TextChatScreen(): JSX.Element {
       resetNavigateGuard();
       navigationInProgressRef.current = false;
       setRouteResult(null);
+      setSuggestionState(null);
       setProcessingPhase('understanding');
       setIsLoading(true);
       try {
@@ -322,6 +337,36 @@ export default function TextChatScreen(): JSX.Element {
     });
   }, [awaitingAddress, currentLocation, address, handleAddressSelected]);
 
+  const handleSuggestionTap = useCallback(
+    (suggestion: DestinationSuggestion) => {
+      if (!suggestionState) return;
+      setSuggestionState(null);
+      appendSystem(`Selected: ${suggestion.name}`);
+      resetNavigateGuard();
+      navigationInProgressRef.current = false;
+      setProcessingPhase('planning_route');
+      setIsLoading(true);
+      const updatedEntities: Entities = {
+        ...suggestionState.pendingEntities,
+        destination: suggestion.name,
+        selectedPlaceId: suggestion.placeId,
+      };
+      doNavigate(updatedEntities, currentLocation).then((result) => {
+        if (result.success) {
+          setRouteResult({
+            route: result.route,
+            routeOptions: result.routeOptions,
+            destinationName: result.destinationName,
+          });
+        }
+      }).finally(() => {
+        setProcessingPhase('idle');
+        setIsLoading(false);
+      });
+    },
+    [suggestionState, appendSystem, resetNavigateGuard, doNavigate, currentLocation],
+  );
+
   const handleConfirmThenNavigate = useCallback(() => {
     confirmCurrentIntent();
     setProcessingPhase('planning_route');
@@ -340,16 +385,26 @@ export default function TextChatScreen(): JSX.Element {
     });
   }, [confirmCurrentIntent, doNavigate, entities, currentLocation]);
 
-  const pastelGradient = colors.gradients.pastelScreen;
-
   return (
-    <LinearGradient
-      colors={[...pastelGradient.colors]}
-      locations={[...pastelGradient.locations]}
-      start={pastelGradient.start}
-      end={pastelGradient.end}
-      style={styles.container}
-    >
+    <View style={styles.container}>
+      {/* Main background: white → soft pink */}
+      <LinearGradient
+        colors={['#FFFFFF', '#FAFBFC', '#F8F4F6', '#F8EEF2', '#FCE8EE']}
+        locations={[0, 0.25, 0.5, 0.75, 1]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
+
+      {/* Top cyan/mint gradient overlay */}
+      <LinearGradient
+        colors={['#E0F7FA', '#E8F5F7', 'transparent']}
+        locations={[0, 0.4, 1]}
+        style={styles.topGradient}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
+
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         {/* Header */}
         <View style={[styles.headerRow, { borderBottomColor: colors.border.default }]}>
@@ -401,6 +456,14 @@ export default function TextChatScreen(): JSX.Element {
               anchorType={awaitingAddress.anchorType}
               onAddressSelected={handleAddressSelected}
               onUseCurrentLocation={handleUseCurrentLocationForAnchor}
+            />
+          )}
+
+          {suggestionState && !isLoading && (
+            <SuggestionMessage
+              suggestions={suggestionState.suggestions}
+              onSelect={handleSuggestionTap}
+              colors={colors}
             />
           )}
 
@@ -471,13 +534,20 @@ export default function TextChatScreen(): JSX.Element {
         onRephrase={rejectAndRephrase}
         onDismiss={rejectAndRephrase}
       />
-
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 200,
+    zIndex: 0,
+  },
   safeArea: { flex: 1 },
   keyboardAvoid: { flex: 1 },
   headerRow: {

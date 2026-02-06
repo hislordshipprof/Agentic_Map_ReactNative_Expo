@@ -108,41 +108,41 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
   const voiceButtonScale = useSharedValue(1);
   const voicePulse = useSharedValue(1);
 
-  // Derive color tokens
+  // Derive color tokens - using blue/pink-cyan gradient colors to match design
   const c = useMemo(() => {
     if (!colors) {
       return {
         wrapperBg: Colors.dark.background,
         containerBg: Colors.effects.glassDark,
         containerBorder: Colors.dark.border,
-        focusBorder: Colors.primary.teal,
+        focusBorder: Colors.primary.blue,
         inputText: Colors.dark.text.primary,
         disabledText: Colors.dark.text.tertiary,
         placeholder: Colors.dark.text.tertiary,
         sendInactive: [Colors.dark.elevated, Colors.dark.surface] as readonly string[],
-        sendActive: [Colors.primary.teal, Colors.primary.tealDark] as readonly string[],
-        sendIcon: Colors.dark.text.primary,
+        sendActive: ['#B8D4E8', '#A8E0E8'] as readonly string[], // Light blue → cyan gradient
+        sendIcon: '#4A4A5A',
         voiceBg: Colors.dark.elevated,
         voiceIcon: Colors.dark.text.secondary,
-        voiceActiveIcon: Colors.primary.teal,
-        voiceGlow: Colors.primary.teal,
+        voiceActiveIcon: Colors.primary.blue,
+        voiceGlow: Colors.primary.blue,
       };
     }
     return {
       wrapperBg: colors.background.primary,
       containerBg: colors.input.background,
       containerBorder: colors.input.border,
-      focusBorder: colors.primary.teal,
+      focusBorder: colors.primary.blue,
       inputText: colors.input.text,
       disabledText: colors.text.tertiary,
       placeholder: colors.input.placeholder,
-      sendInactive: [colors.surface.elevated, colors.surface.card] as readonly string[],
-      sendActive: [colors.primary.teal, colors.primary.tealDark] as readonly string[],
-      sendIcon: colors.text.inverse,
+      sendInactive: ['#E5E7EB', '#F3F4F6'] as readonly string[],
+      sendActive: ['#B8D4E8', '#A8E0E8'] as readonly string[], // Light blue → cyan gradient
+      sendIcon: '#4A4A5A',
       voiceBg: colors.surface.elevated,
       voiceIcon: colors.text.secondary,
-      voiceActiveIcon: colors.primary.teal,
-      voiceGlow: colors.primary.teal,
+      voiceActiveIcon: colors.primary.blue,
+      voiceGlow: colors.primary.blue,
     };
   }, [colors]);
 
@@ -303,7 +303,7 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
           editable={!disabled && !isRecording}
           maxLength={maxLength}
           multiline
-          numberOfLines={1}
+          textAlignVertical="center"
           returnKeyType="send"
           blurOnSubmit
           onSubmitEditing={handleSend}
@@ -402,10 +402,11 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Platform.OS === 'ios' ? Spacing.sm : Spacing.xs,
     paddingRight: Spacing.sm,
     fontSize: FontSize.base,
     fontFamily: FontFamily.primary,
+    minHeight: 40,
     maxHeight: 100,
     lineHeight: 22,
   },

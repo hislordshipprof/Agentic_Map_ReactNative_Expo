@@ -26,10 +26,10 @@ const PROGRESS_WIDTH = 200;
 const OPTIMIZED_RATIO = 33 / 45;
 
 const FEATURES = [
-  { icon: 'mic-outline' as const, label: 'Voice Commands', color: '#14B8A6' },
-  { icon: 'git-branch-outline' as const, label: 'Multi-Stop Routes', color: '#7C3AED' },
+  { icon: 'mic-outline' as const, label: 'Voice Commands', color: '#3B82F6' },
+  { icon: 'git-branch-outline' as const, label: 'Multi-Stop Routes', color: '#8B5CF6' },
   { icon: 'flash-outline' as const, label: 'Smart Optimization', color: '#F59E0B' },
-  { icon: 'navigate-outline' as const, label: 'Turn-by-Turn Nav', color: '#3B82F6' },
+  { icon: 'navigate-outline' as const, label: 'Turn-by-Turn Nav', color: '#06B6D4' },
 ];
 
 export default function FeaturesScreen() {
@@ -94,7 +94,7 @@ export default function FeaturesScreen() {
           <Animated.View entering={FadeInUp.duration(400).delay(380)} style={styles.optimizedCard}>
             <View style={styles.optimizedRow1}>
               <View style={styles.optimizedLeft}>
-                <Ionicons name="flash" size={18} color="#10B981" />
+                <Ionicons name="flash" size={18} color="#3B82F6" />
                 <Text style={styles.optimizedTitle}>Route Optimized</Text>
               </View>
               <Text style={styles.savedText}>-12 min</Text>
@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.primary,
     fontSize: FontSize['3xl'],
     fontWeight: '700',
-    color: '#14B8A6',
+    color: '#3B82F6',
     textAlign: 'center',
     marginBottom: Spacing.base,
   },
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.primary,
     fontSize: FontSize.lg,
     fontWeight: '700',
-    color: '#10B981',
+    color: '#3B82F6',
   },
   optimizedMeta: {
     fontFamily: FontFamily.primary,
@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#10B981',
+    backgroundColor: '#3B82F6',
     borderRadius: 4,
   },
   progressLabel: {

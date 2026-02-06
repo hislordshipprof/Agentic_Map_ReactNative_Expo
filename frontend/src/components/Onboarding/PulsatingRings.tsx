@@ -1,5 +1,5 @@
 /** Pulsating concentric rings around a centered child (e.g. chat icon).
- * Updated for light theme - teal rings on white/light background.
+ * Updated for light theme - blue rings on white/light background.
  */
 
 import React, { useEffect } from 'react';
@@ -15,9 +15,9 @@ import Animated, {
 } from 'react-native-reanimated';
 
 const RING_COLORS = [
-  'rgba(20, 184, 166, 0.25)',
-  'rgba(20, 184, 166, 0.15)',
-  'rgba(20, 184, 166, 0.08)',
+  'rgba(59, 130, 246, 0.25)',
+  'rgba(59, 130, 246, 0.15)',
+  'rgba(59, 130, 246, 0.08)',
 ];
 
 export interface PulsatingRingsProps {

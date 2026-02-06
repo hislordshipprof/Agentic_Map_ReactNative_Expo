@@ -1,7 +1,8 @@
-/** Pagination dots for onboarding: 3 steps, active = teal, light theme. */
+/** Pagination dots for onboarding: 3 steps, active = gradient pill, light theme. */
 
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Spacing, Layout } from '@/theme';
 
 export interface PaginationDotsProps {
@@ -17,13 +18,18 @@ export const PaginationDots: React.FC<PaginationDotsProps> = ({ activeStep }) =>
       accessibilityRole="adjustable"
     >
       {([1, 2, 3] as const).map((s) => (
-        <View
-          key={s}
-          style={[
-            styles.dot,
-            s === activeStep && styles.dotActive,
-          ]}
-        />
+        s === activeStep ? (
+          <LinearGradient
+            key={s}
+            colors={['#E8B4CB', '#D4BEE4', '#B8D4E8', '#A8E0E8']}
+            locations={[0, 0.35, 0.7, 1]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={[styles.dot, styles.dotActive]}
+          />
+        ) : (
+          <View key={s} style={styles.dot} />
+        )
       ))}
     </View>
   );
@@ -45,7 +51,6 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     width: 24,
-    backgroundColor: '#14B8A6',
     borderWidth: 0,
   },
 });

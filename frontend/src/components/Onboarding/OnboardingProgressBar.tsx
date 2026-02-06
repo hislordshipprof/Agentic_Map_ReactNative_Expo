@@ -1,14 +1,15 @@
-/** Thin onboarding progress bar: 33% / 66% / 100% by step. */
+/** Thin onboarding progress bar with gradient fill: 33% / 66% / 100% by step. */
 
 import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
   Easing,
 } from 'react-native-reanimated';
-import { Colors, Spacing } from '@/theme';
+import { Spacing } from '@/theme';
 
 export interface OnboardingProgressBarProps {
   /** 1, 2, or 3 */
@@ -34,7 +35,15 @@ export const OnboardingProgressBar: React.FC<OnboardingProgressBarProps> = ({ st
 
   return (
     <View style={styles.track}>
-      <Animated.View style={[styles.fill, fillStyle]} />
+      <Animated.View style={[styles.fillWrap, fillStyle]}>
+        <LinearGradient
+          colors={['#E8B4CB', '#D4BEE4', '#B8D4E8', '#A8E0E8']}
+          locations={[0, 0.35, 0.7, 1]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={styles.fill}
+        />
+      </Animated.View>
     </View>
   );
 };
@@ -43,14 +52,18 @@ const styles = StyleSheet.create({
   track: {
     height: 4,
     width: '100%',
-    backgroundColor: '#E5E7EB',
+    backgroundColor: 'rgba(0, 0, 0, 0.08)',
     borderRadius: 2,
     overflow: 'hidden',
     marginBottom: Spacing.md,
   },
-  fill: {
+  fillWrap: {
     height: '100%',
-    backgroundColor: Colors.primary.teal,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  fill: {
+    flex: 1,
     borderRadius: 2,
   },
 });

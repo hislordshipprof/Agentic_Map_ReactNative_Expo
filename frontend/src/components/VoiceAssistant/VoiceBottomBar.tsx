@@ -1,6 +1,7 @@
 /**
- * VoiceBottomBar - Large teal mic (80px) with animated outer glow,
+ * VoiceBottomBar - Large gradient mic (80px) with animated outer glow,
  * waveform bars, and "Tap to speak" / "Listening..." label.
+ * Uses pink → lavender → light blue → cyan gradient to match design.
  */
 
 import React, { useEffect } from 'react';
@@ -83,11 +84,11 @@ export const VoiceBottomBar: React.FC<VoiceBottomBarProps> = ({
 
       {/* Mic button with glow */}
       <View style={styles.micArea}>
-        {/* Outer glow ring */}
+        {/* Outer glow ring - using pink-cyan colors */}
         <Animated.View
           style={[
             styles.outerGlow,
-            { backgroundColor: `${colors.primary.teal}30` },
+            { backgroundColor: 'rgba(184, 212, 232, 0.4)' },
             glowStyle,
           ]}
         />
@@ -99,7 +100,8 @@ export const VoiceBottomBar: React.FC<VoiceBottomBarProps> = ({
           ]}
         >
           <LinearGradient
-            colors={[colors.primary.teal, colors.primary.tealDark]}
+            colors={['#E8B4CB', '#D4BEE4', '#B8D4E8', '#A8E0E8']}
+            locations={[0, 0.35, 0.7, 1]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.micButton}
@@ -107,7 +109,7 @@ export const VoiceBottomBar: React.FC<VoiceBottomBarProps> = ({
             <Ionicons
               name={isActive ? 'stop' : 'mic'}
               size={32}
-              color="#FFFFFF"
+              color="#4A4A5A"
             />
           </LinearGradient>
         </Pressable>

@@ -32,7 +32,9 @@ export interface ApiError {
   status?: number;
   details?: Record<string, unknown>;
   suggestion?: string;
-  suggestions?: string[];
+  suggestions?: string[] | Array<{ placeId: string; name: string; description: string }>;
+  /** Original query that failed (for DESTINATION_NOT_FOUND_SUGGESTIONS) */
+  originalQuery?: string;
 }
 
 /**
@@ -49,6 +51,7 @@ export const ApiErrorCode = {
   ROUTE_EXCEEDS_BUDGET: 'ROUTE_EXCEEDS_BUDGET',
   AMBIGUOUS_DESTINATION: 'AMBIGUOUS_DESTINATION',
   LOCATION_UNAVAILABLE: 'LOCATION_UNAVAILABLE',
+  DESTINATION_NOT_FOUND_SUGGESTIONS: 'DESTINATION_NOT_FOUND_SUGGESTIONS',
   SERVER_ERROR: 'SERVER_ERROR',
 } as const;
 
@@ -133,6 +136,8 @@ export interface NavigateWithStopsRequest {
   origin: LatLng;
   destination: {
     name: string;
+    /** Place ID from "Did you mean?" suggestion selection */
+    placeId?: string;
     location?: LatLng;
   };
   stops: Array<{
@@ -169,6 +174,15 @@ export interface NavigateWithStopsData {
     detourMinutes: number;
     category: string;
   }>;
+  /** Stop name corrections from autocomplete (e.g. "chik fila" → "Chick-fil-A") */
+  corrections?: Array<{ original: string; corrected: string }>;
+}
+
+/** Structured suggestion from "Did you mean?" autocomplete fallback */
+export interface DestinationSuggestion {
+  placeId: string;
+  name: string;
+  description: string;
 }
 
 export type NavigateWithStopsResponse = ApiResponse<NavigateWithStopsData>;

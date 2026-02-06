@@ -12,10 +12,16 @@ import { useUserAnchors } from './useUserAnchors';
 import { errandApi } from '@/services/api';
 import type { Entities } from '@/types/nlu';
 import type { Route, RouteOption } from '@/types/route';
+import type { DestinationSuggestion } from '@/types/api';
 
 interface UseNavigateWithStopsOptions {
   onSystemMessage: (text: string) => void;
   onAnchorNotSet?: (anchorType: string, pendingEntities: Entities, pendingOrigin: { lat: number; lng: number }) => void;
+  /** Called when destination can't be found but autocomplete has suggestions */
+  onSuggestions?: (
+    suggestions: DestinationSuggestion[],
+    pendingEntities: Entities,
+  ) => void;
   /** When false, skip auto-navigation to route-display. Default: true */
   autoNavigate?: boolean;
 }
@@ -27,7 +33,7 @@ interface NavigateResult {
   destinationName?: string;
 }
 
-export function useNavigateWithStops({ onSystemMessage, onAnchorNotSet, autoNavigate = true }: UseNavigateWithStopsOptions) {
+export function useNavigateWithStops({ onSystemMessage, onAnchorNotSet, onSuggestions, autoNavigate = true }: UseNavigateWithStopsOptions) {
   const router = useRouter();
   const {
     setPending,
@@ -60,12 +66,24 @@ export function useNavigateWithStops({ onSystemMessage, onAnchorNotSet, autoNavi
       try {
         const res = await errandApi.navigateWithStops({
           origin: loc,
-          destination: { name: ent.destination },
+          destination: {
+            name: ent.destination,
+            placeId: ent.selectedPlaceId,
+          },
           stops: (ent.stops || []).map((s) => ({ name: s, category: ent.category })),
           anchors: anchors.map((a) => ({ name: a.name, location: a.location })),
         });
         if (!res.success || res.error) {
           navigateDoneRef.current = false;
+          // Handle "Did you mean?" suggestions from autocomplete fallback
+          if (res.error?.code === 'DESTINATION_NOT_FOUND_SUGGESTIONS' && onSuggestions) {
+            const structured = res.error.suggestions as DestinationSuggestion[] | undefined;
+            if (structured && structured.length > 0 && typeof structured[0] === 'object') {
+              onSystemMessage(res.error.message);
+              onSuggestions(structured, ent);
+              return { success: false };
+            }
+          }
           onSystemMessage(res.error?.message ?? 'Could not plan the route. Please try again.');
           return { success: false };
         }
@@ -74,11 +92,20 @@ export function useNavigateWithStops({ onSystemMessage, onAnchorNotSet, autoNavi
           routeOptions?: RouteOption[];
           excludedStops?: unknown[];
           destination?: { name: string };
+          corrections?: Array<{ original: string; corrected: string }>;
         } | undefined;
         if (!data?.route) {
           navigateDoneRef.current = false;
           onSystemMessage('No route in response.');
           return { success: false };
+        }
+
+        // Show stop name corrections (auto-corrected via autocomplete)
+        if (data.corrections?.length) {
+          const corrText = data.corrections
+            .map(c => `Using "${c.corrected}" for "${c.original}"`)
+            .join('. ');
+          onSystemMessage(corrText);
         }
 
         const destName = data.destination?.name || ent.destination;

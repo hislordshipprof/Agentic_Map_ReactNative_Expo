@@ -33,8 +33,10 @@ export interface RouteStop {
   location: LatLng;
   /** Distance from route start in miles */
   mileMarker: number;
-  /** Extra distance required for this stop */
+  /** Extra distance required for this stop (meters) */
   detourCost: number;
+  /** Extra time required for this stop (minutes) */
+  detourCostMin?: number;
   /** Detour status classification */
   status: DetourStatus;
   /** Place category (coffee, gas, grocery, etc.) */

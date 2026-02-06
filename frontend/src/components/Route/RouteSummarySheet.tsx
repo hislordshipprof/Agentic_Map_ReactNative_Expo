@@ -264,7 +264,10 @@ export const RouteSummarySheet: React.FC<RouteSummarySheetProps> = ({
   const etaStr = etaTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
   // Calculate extra time (detour minutes)
-  const extraTimeMin = recommended?.extraTimeMin ?? 0;
+  // Fallback: when routeOptions aren't available, sum per-stop detourCostMin from route
+  const extraTimeMin = recommended?.extraTimeMin
+    ?? route.stops?.reduce((sum, s) => sum + (s.detourCostMin ?? 0), 0)
+    ?? 0;
 
   return (
     <GestureDetector gesture={panGesture}>

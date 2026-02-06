@@ -1,21 +1,26 @@
-/** Primary CTA for onboarding: "Next >" or "Get Started" with teal gradient. */
+/**
+ * Primary CTA for onboarding: gradient button with shimmer animation.
+ * Pink → Lavender → Light Blue → Cyan horizontal gradient (matches auth/welcome).
+ */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Text, StyleSheet, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withRepeat,
+  withTiming,
+  interpolate,
+  Easing,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  Colors,
   FontFamily,
   FontSize,
   Spacing,
   TouchTarget,
-  Layout,
   SpringConfig,
 } from '@/theme';
 
@@ -24,19 +29,29 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export interface OnboardingCtaProps {
   label: 'Next' | 'Get Started';
   onPress: () => void;
-  /** Slightly smaller for in-card usage (e.g. Get Started in journey card) */
+  /** Slightly smaller for in-card usage */
   compact?: boolean;
-  /** Use soft pink gradient instead of teal */
-  variant?: 'teal' | 'pink';
 }
 
-const TEAL_GRADIENT = [Colors.primary.teal, Colors.primary.tealDark] as const;
-const PINK_GRADIENT = ['#FFB8C9', '#FF9AB0'] as const;
-
-export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, compact, variant = 'teal' }) => {
+export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, compact }) => {
   const scale = useSharedValue(1);
+  const shimmer = useSharedValue(0);
+
+  useEffect(() => {
+    shimmer.value = withRepeat(
+      withTiming(1, { duration: 2500, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, []);
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
+  }));
+
+  const shimmerStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(shimmer.value, [0, 0.5, 1], [0, 0.3, 0]),
+    transform: [{ translateX: interpolate(shimmer.value, [0, 1], [-150, 150]) }],
   }));
 
   const showArrow = label === 'Next';
@@ -56,9 +71,10 @@ export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, co
       accessibilityRole="button"
     >
       <LinearGradient
-        colors={[...(variant === 'pink' ? PINK_GRADIENT : TEAL_GRADIENT)]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        colors={['#E8B4CB', '#D4BEE4', '#B8D4E8', '#A8E0E8']}
+        locations={[0, 0.35, 0.7, 1]}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
         style={[styles.gradient, compact && styles.gradientCompact]}
       >
         <Text style={styles.text}>{label}</Text>
@@ -66,7 +82,7 @@ export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, co
           <Ionicons
             name="chevron-forward"
             size={20}
-            color="#FFFFFF"
+            color="#4A4A5A"
             style={styles.icon}
           />
         )}
@@ -74,10 +90,20 @@ export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, co
           <Ionicons
             name="arrow-forward"
             size={18}
-            color="#FFFFFF"
+            color="#4A4A5A"
             style={styles.icon}
           />
         )}
+
+        {/* Shimmer overlay */}
+        <Animated.View style={[styles.shimmer, shimmerStyle]}>
+          <LinearGradient
+            colors={['transparent', 'rgba(255,255,255,0.4)', 'transparent']}
+            style={StyleSheet.absoluteFill}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+          />
+        </Animated.View>
       </LinearGradient>
     </AnimatedPressable>
   );
@@ -86,7 +112,7 @@ export const OnboardingCta: React.FC<OnboardingCtaProps> = ({ label, onPress, co
 const styles = StyleSheet.create({
   wrapper: {
     minHeight: TouchTarget.minAndroid,
-    borderRadius: Layout.radiusLarge,
+    borderRadius: 28,
     overflow: 'hidden',
     minWidth: 160,
   },
@@ -110,9 +136,15 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.primary,
     fontSize: FontSize.base,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#3A3A4A',
   },
   icon: {
     marginLeft: 2,
+  },
+  shimmer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 80,
   },
 });

@@ -119,7 +119,25 @@ export default function VoiceAssistantScreen(): JSX.Element {
   }, [handleVoiceConfirmBase, voiceRoute, router]);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background.primary }]}>
+    <View style={styles.container}>
+      {/* Main background: white → soft pink */}
+      <LinearGradient
+        colors={['#FFFFFF', '#FAFBFC', '#F8F4F6', '#F8EEF2', '#FCE8EE']}
+        locations={[0, 0.25, 0.5, 0.75, 1]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
+
+      {/* Top cyan/mint gradient overlay */}
+      <LinearGradient
+        colors={['#E0F7FA', '#E8F5F7', 'transparent']}
+        locations={[0, 0.4, 1]}
+        style={styles.topGradient}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
+
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         {/* Header */}
         <View style={[styles.headerRow, { borderBottomColor: colors.border.light }]}>
@@ -187,9 +205,10 @@ export default function VoiceAssistantScreen(): JSX.Element {
                 onPress={handleVoiceConfirm}
               >
                 <LinearGradient
-                  colors={[colors.primary.teal, colors.primary.tealDark]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
+                  colors={['#E8B4CB', '#D4BEE4', '#B8D4E8', '#A8E0E8']}
+                  locations={[0, 0.35, 0.7, 1]}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
                   style={styles.primaryAction}
                 >
                   <Text style={styles.primaryActionText}>Show Route</Text>
@@ -200,9 +219,9 @@ export default function VoiceAssistantScreen(): JSX.Element {
         </ScrollView>
       </SafeAreaView>
 
-      {/* Bottom area with subtle teal gradient */}
+      {/* Bottom area with subtle pink gradient */}
       <LinearGradient
-        colors={['transparent', `${colors.primary.teal}08`, `${colors.primary.teal}12`]}
+        colors={['transparent', 'rgba(232, 180, 203, 0.08)', 'rgba(232, 180, 203, 0.15)']}
         style={styles.bottomGradient}
       >
         <VoiceBottomBar
@@ -216,7 +235,15 @@ export default function VoiceAssistantScreen(): JSX.Element {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 200,
+    zIndex: 0,
+  },
   safeArea: { flex: 1 },
   headerRow: {
     flexDirection: 'row',
@@ -274,7 +301,7 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.primary,
     fontSize: FontSize.base,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#3A3A4A',
   },
   bottomGradient: {
     paddingTop: Spacing.sm,

@@ -6,6 +6,8 @@
  * - Location caching for instant display on app restart
  * - Tiered accuracy acquisition (fast first, then precise)
  * - Stale/cache status indicators
+ * - Concurrency guard (only one refresh at a time)
+ * - Single state update per refresh (avoids blue-dot flicker)
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -45,6 +47,8 @@ export function useLocation(): UseLocationResult {
   // Track last geocoded location to avoid unnecessary re-geocoding
   const lastGeocodedLocation = useRef<{ lat: number; lng: number } | null>(null);
   const hasInitialized = useRef(false);
+  // Guard against concurrent refreshes
+  const isRefreshing = useRef(false);
 
   /**
    * Reverse geocode coordinates to get street address
@@ -67,47 +71,6 @@ export function useLocation(): UseLocationResult {
       }
     },
     []
-  );
-
-  /**
-   * Update location state and cache
-   */
-  const updateLocationState = useCallback(
-    async (
-      coords: { lat: number; lng: number },
-      accuracyValue: number,
-      fromCache: boolean,
-      forceGeocode: boolean = false
-    ) => {
-      setCurrentLocation(coords);
-      setAccuracy(accuracyValue);
-      setIsFromCache(fromCache);
-
-      // Check if we need to geocode (moved >50m or forced)
-      const needsGeocode =
-        forceGeocode ||
-        !lastGeocodedLocation.current ||
-        hasMovedSignificantly(lastGeocodedLocation.current, coords);
-
-      if (needsGeocode) {
-        const newAddress = await geocodeLocation(coords);
-        if (newAddress) {
-          setAddress(newAddress);
-          lastGeocodedLocation.current = coords;
-
-          // Cache the location with address
-          const cached: CachedLocation = {
-            coordinates: coords,
-            address: newAddress,
-            accuracy: accuracyValue,
-            timestamp: Date.now(),
-            geocodedAt: Date.now(),
-          };
-          await setCachedLocation(cached);
-        }
-      }
-    },
-    [geocodeLocation]
   );
 
   /**
@@ -135,9 +98,20 @@ export function useLocation(): UseLocationResult {
   }, []);
 
   /**
-   * Main refresh function with tiered accuracy acquisition
+   * Main refresh function with tiered accuracy acquisition.
+   *
+   * Collects the best location across all tiers, then applies a SINGLE
+   * state update at the end. This prevents the marker from flickering
+   * due to multiple intermediate renders (one per tier).
+   *
+   * A concurrency guard ensures only one refresh runs at a time.
+   * The AppState effect uses a ref to avoid dependency cycling.
    */
   const refresh = useCallback(async () => {
+    // Prevent concurrent refreshes — if one is already running, skip
+    if (isRefreshing.current) return;
+    isRefreshing.current = true;
+
     setLocationError(null);
 
     // Only show loading if we don't have a cached location
@@ -146,6 +120,11 @@ export function useLocation(): UseLocationResult {
       setIsLoading(true);
       setLocationStatus('loading');
     }
+
+    // Accumulate the best result across tiers instead of updating state per tier
+    let bestCoords: { lat: number; lng: number } | null = null;
+    let bestAccuracy = 0;
+    let hasFreshLocation = false;
 
     try {
       // Check permissions
@@ -156,6 +135,7 @@ export function useLocation(): UseLocationResult {
         setAddress(null);
         setLocationStatus('denied');
         setIsLoading(false);
+        isRefreshing.current = false;
         return;
       }
 
@@ -163,14 +143,9 @@ export function useLocation(): UseLocationResult {
       try {
         const lastKnown = await Location.getLastKnownPositionAsync();
         if (lastKnown) {
-          await updateLocationState(
-            { lat: lastKnown.coords.latitude, lng: lastKnown.coords.longitude },
-            lastKnown.coords.accuracy ?? 0,
-            false,
-            !cached // Force geocode if no cache
-          );
-          setLocationStatus('ready');
-          setIsLoading(false);
+          bestCoords = { lat: lastKnown.coords.latitude, lng: lastKnown.coords.longitude };
+          bestAccuracy = lastKnown.coords.accuracy ?? 0;
+          hasFreshLocation = true;
         }
       } catch {
         // Continue to next tier
@@ -181,14 +156,9 @@ export function useLocation(): UseLocationResult {
         const lowAccuracy = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Low,
         });
-        await updateLocationState(
-          { lat: lowAccuracy.coords.latitude, lng: lowAccuracy.coords.longitude },
-          lowAccuracy.coords.accuracy ?? 0,
-          false,
-          true
-        );
-        setLocationStatus('ready');
-        setIsLoading(false);
+        bestCoords = { lat: lowAccuracy.coords.latitude, lng: lowAccuracy.coords.longitude };
+        bestAccuracy = lowAccuracy.coords.accuracy ?? 0;
+        hasFreshLocation = true;
       } catch {
         // Continue to next tier
       }
@@ -198,18 +168,44 @@ export function useLocation(): UseLocationResult {
         const balanced = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
-        await updateLocationState(
-          { lat: balanced.coords.latitude, lng: balanced.coords.longitude },
-          balanced.coords.accuracy ?? 0,
-          false,
-          true
-        );
-        setLocationStatus('ready');
+        bestCoords = { lat: balanced.coords.latitude, lng: balanced.coords.longitude };
+        bestAccuracy = balanced.coords.accuracy ?? 0;
+        hasFreshLocation = true;
       } catch {
         // If all tiers failed and we have no location, set error
-        if (!cached) {
+        if (!hasFreshLocation && !cached) {
           setLocationError(new Error('Could not get current location'));
           setLocationStatus('error');
+        }
+      }
+
+      // Apply a SINGLE state update with the best result from all tiers
+      if (bestCoords) {
+        setCurrentLocation(bestCoords);
+        setAccuracy(bestAccuracy);
+        setIsFromCache(false);
+        setLocationStatus('ready');
+
+        // Geocode only if moved significantly or no previous geocode
+        const needsGeocode =
+          !lastGeocodedLocation.current ||
+          hasMovedSignificantly(lastGeocodedLocation.current, bestCoords);
+
+        if (needsGeocode) {
+          const newAddress = await geocodeLocation(bestCoords);
+          if (newAddress) {
+            setAddress(newAddress);
+            lastGeocodedLocation.current = bestCoords;
+
+            const cachedEntry: CachedLocation = {
+              coordinates: bestCoords,
+              address: newAddress,
+              accuracy: bestAccuracy,
+              timestamp: Date.now(),
+              geocodedAt: Date.now(),
+            };
+            await setCachedLocation(cachedEntry);
+          }
         }
       }
     } catch (e) {
@@ -219,8 +215,14 @@ export function useLocation(): UseLocationResult {
       }
     } finally {
       setIsLoading(false);
+      isRefreshing.current = false;
     }
-  }, [updateLocationState]);
+  }, [geocodeLocation]);
+
+  // Stable ref for refresh — used by AppState effect to avoid dependency cycling.
+  // The effect never re-registers, so the listener is stable across renders.
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
 
   // Load cached location and fetch fresh on mount (once only)
   useEffect(() => {
@@ -228,19 +230,20 @@ export function useLocation(): UseLocationResult {
     hasInitialized.current = true;
 
     loadCachedLocation().then(() => {
-      refresh();
+      refreshRef.current();
     });
-  }, [loadCachedLocation, refresh]);
+  }, [loadCachedLocation]);
 
-  // Refresh when app comes to foreground
+  // Refresh when app comes to foreground.
+  // Uses refreshRef so the effect never re-registers (empty dep besides stable ref).
   useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
-        refresh();
+        refreshRef.current();
       }
     });
     return () => sub.remove();
-  }, [refresh]);
+  }, []);
 
   return {
     currentLocation,
