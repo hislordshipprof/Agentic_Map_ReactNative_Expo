@@ -3,6 +3,11 @@
  *
  * Header + chat area + processing states + VoiceBottomBar.
  * Uses useUnifiedVoice, useNLUFlow, useNavigateWithStops.
+ *
+ * Key features:
+ * - AI messages stream with typewriter effect
+ * - Planning indicator only shows during actual route planning
+ * - User speaking indicator while VAD detects voice
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -14,8 +19,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '@/theme/useThemeColors';
 import { FontFamily, FontSize, Spacing } from '@/theme';
 import { VoiceChatBubble } from '@/components/VoiceAssistant/VoiceChatBubble';
+import { StreamingChatBubble } from '@/components/VoiceAssistant/StreamingChatBubble';
 import { VoiceBottomBar } from '@/components/VoiceAssistant/VoiceBottomBar';
 import { ProcessingIndicator } from '@/components/VoiceAssistant/ProcessingIndicator';
+import { RoutePlanningFlow } from '@/components/Chat/RoutePlanningFlow';
 import { useUnifiedVoice, useNLUFlow, useLocation, useNavigateWithStops } from '@/hooks';
 import type { Message } from '@/components/Conversation';
 
@@ -31,6 +38,11 @@ export default function VoiceAssistantScreen(): JSX.Element {
     audioLevel,
     suggestedResponse,
     voiceRoute,
+    voiceBackend,
+    agentMessage,
+    isPlanning,
+    isUserSpeaking,
+    planningData,
     handleMicPress,
     handleConfirm: handleVoiceConfirmBase,
     handleReject: handleVoiceReject,
@@ -47,7 +59,9 @@ export default function VoiceAssistantScreen(): JSX.Element {
   const { currentLocation } = useLocation();
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [processingPhase, setProcessingPhase] = useState<'idle' | 'finding' | 'optimizing'>('idle');
+  const [processingPhase, setProcessingPhase] = useState<'idle' | 'thinking' | 'optimizing'>('idle');
+  const [streamingMessage, setStreamingMessage] = useState<string>('');
+  const lastAgentMessageRef = useRef<string>('');
 
   const appendSystem = useCallback((text: string) => {
     setMessages((prev) => [
@@ -70,35 +84,66 @@ export default function VoiceAssistantScreen(): JSX.Element {
     resetNavigateGuard,
   } = useNavigateWithStops({ onSystemMessage: appendSystem });
 
-  // When voice transcript arrives, add as user message and process
+  // Handle ElevenLabs agent messages - stream with typewriter effect
+  useEffect(() => {
+    if (voiceBackend === 'elevenlabs' && agentMessage && agentMessage !== lastAgentMessageRef.current) {
+      lastAgentMessageRef.current = agentMessage;
+      // Set streaming message - will be displayed with typewriter effect
+      setStreamingMessage(agentMessage);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    }
+  }, [agentMessage, voiceBackend]);
+
+  // When streaming completes, move to regular messages
+  const handleStreamComplete = useCallback(() => {
+    if (streamingMessage) {
+      appendSystem(streamingMessage);
+      setStreamingMessage('');
+    }
+  }, [streamingMessage, appendSystem]);
+
+  // For ElevenLabs: user transcript is handled by the hook, add to messages when received
   const lastProcessedTranscript = useRef('');
   useEffect(() => {
-    if (voiceTranscript && voiceTranscript !== lastProcessedTranscript.current) {
-      lastProcessedTranscript.current = voiceTranscript;
-      appendUser(voiceTranscript);
-      resetNavigateGuard();
-      setProcessingPhase('finding');
+    if (voiceBackend === 'elevenlabs') {
+      // ElevenLabs: just add user transcript to messages, agent handles everything
+      if (voiceTranscript && voiceTranscript !== lastProcessedTranscript.current) {
+        lastProcessedTranscript.current = voiceTranscript;
+        appendUser(voiceTranscript);
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    } else {
+      // Legacy voice: process through NLU
+      if (voiceTranscript && voiceTranscript !== lastProcessedTranscript.current) {
+        lastProcessedTranscript.current = voiceTranscript;
+        appendUser(voiceTranscript);
+        resetNavigateGuard();
+        // Don't show "Finding stops" immediately - wait for NLU intent
+        setProcessingPhase('thinking');
 
-      const conversationHistory = messages.map((m) => ({
-        role: m.sender === 'system' ? 'model' : 'user',
-        content: m.text,
-      }));
+        const conversationHistory = messages.map((m) => ({
+          role: m.sender === 'system' ? 'model' : 'user',
+          content: m.text,
+        }));
 
-      processUtterance(voiceTranscript, currentLocation ?? undefined, conversationHistory)
-        .catch(() => appendSystem('Something went wrong.'))
-        .finally(() => setProcessingPhase('idle'));
+        processUtterance(voiceTranscript, currentLocation ?? undefined, conversationHistory)
+          .catch(() => appendSystem('Something went wrong.'))
+          .finally(() => setProcessingPhase('idle'));
+      }
     }
-  }, [voiceTranscript]);
+  }, [voiceTranscript, voiceBackend]);
 
-  // Handle conversational NLU responses
+  // Handle conversational NLU responses (legacy voice only)
   useEffect(() => {
-    if (flowState === 'conversational' && lastMessage) {
+    if (voiceBackend !== 'elevenlabs' && flowState === 'conversational' && lastMessage) {
       appendSystem(lastMessage);
     }
-  }, [flowState, lastMessage, appendSystem]);
+  }, [flowState, lastMessage, appendSystem, voiceBackend]);
 
-  // HIGH confidence: navigate
+  // HIGH confidence: navigate (legacy voice only)
   useEffect(() => {
+    if (voiceBackend === 'elevenlabs') return; // ElevenLabs handles navigation via tools
+
     if (
       flowState !== 'high_confidence' ||
       intent !== 'navigate_with_stops' ||
@@ -108,7 +153,7 @@ export default function VoiceAssistantScreen(): JSX.Element {
     doNavigate(entities, currentLocation).finally(() => {
       setProcessingPhase('idle');
     });
-  }, [flowState, intent, entities, currentLocation, doNavigate]);
+  }, [flowState, intent, entities, currentLocation, doNavigate, voiceBackend]);
 
   // Voice route from ElevenLabs
   const handleVoiceConfirm = useCallback(() => {
@@ -117,6 +162,10 @@ export default function VoiceAssistantScreen(): JSX.Element {
       router.push('/route-display');
     }
   }, [handleVoiceConfirmBase, voiceRoute, router]);
+
+  // Determine what processing indicator to show
+  const showPlanningIndicator = voiceBackend === 'elevenlabs' ? isPlanning : processingPhase === 'optimizing';
+  const showThinkingIndicator = voiceBackend !== 'elevenlabs' && processingPhase === 'thinking';
 
   return (
     <View style={styles.container}>
@@ -174,8 +223,21 @@ export default function VoiceAssistantScreen(): JSX.Element {
             />
           ))}
 
-          {/* Partial transcript preview */}
-          {partialTranscript && voiceStatus === 'listening' && (
+          {/* User speaking indicator (ElevenLabs) */}
+          {voiceBackend === 'elevenlabs' && isUserSpeaking && voiceStatus === 'listening' && (
+            <View style={[styles.speakingContainer, { alignItems: 'flex-end' }]}>
+              <View style={[styles.speakingBubble, { backgroundColor: colors.message.user }]}>
+                <View style={styles.speakingDots}>
+                  <View style={[styles.dot, { backgroundColor: colors.message.userText }]} />
+                  <View style={[styles.dot, { backgroundColor: colors.message.userText }]} />
+                  <View style={[styles.dot, { backgroundColor: colors.message.userText }]} />
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Partial transcript preview (legacy voice) */}
+          {voiceBackend !== 'elevenlabs' && partialTranscript && voiceStatus === 'listening' && (
             <VoiceChatBubble
               text={partialTranscript}
               sender="user"
@@ -183,12 +245,33 @@ export default function VoiceAssistantScreen(): JSX.Element {
             />
           )}
 
-          {/* Processing indicators */}
-          {processingPhase === 'finding' && (
-            <ProcessingIndicator message="Finding stops..." />
+          {/* Streaming AI message with typewriter effect (ElevenLabs) */}
+          {voiceBackend === 'elevenlabs' && streamingMessage && (
+            <StreamingChatBubble
+              text={streamingMessage}
+              index={messages.length + 1}
+              charsPerSecond={60}
+              onComplete={handleStreamComplete}
+            />
           )}
-          {processingPhase === 'optimizing' && (
-            <ProcessingIndicator message="Optimizing route..." />
+
+          {/* Processing indicators */}
+          {showPlanningIndicator && planningData && (
+            <View style={styles.planningFlowWrap}>
+              <RoutePlanningFlow
+                entities={{
+                  destination: planningData.destination ?? undefined,
+                  stops: planningData.stops,
+                }}
+                colors={colors}
+              />
+            </View>
+          )}
+          {showPlanningIndicator && !planningData && (
+            <ProcessingIndicator message="Planning your route..." />
+          )}
+          {showThinkingIndicator && (
+            <ProcessingIndicator message="Thinking..." />
           )}
 
           {/* Action row when confirming */}
@@ -269,6 +352,29 @@ const styles = StyleSheet.create({
   chatContent: {
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.xl,
+  },
+  speakingContainer: {
+    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.base,
+  },
+  speakingBubble: {
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: 18,
+  },
+  speakingDots: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    opacity: 0.7,
+  },
+  planningFlowWrap: {
+    paddingHorizontal: Spacing.base,
+    marginBottom: Spacing.sm,
   },
   actionRow: {
     flexDirection: 'row',

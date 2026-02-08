@@ -6,5 +6,3 @@
  */
 
 export * from './VoiceMicButton';
-export * from './WaveformVisualizer';
-export * from './VoiceStatusIndicator';

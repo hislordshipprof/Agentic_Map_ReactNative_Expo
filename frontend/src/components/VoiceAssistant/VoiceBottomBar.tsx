@@ -22,7 +22,7 @@ import { useThemeColors } from '@/theme/useThemeColors';
 import { FontFamily, FontSize, Spacing } from '@/theme';
 import { WaveformBars } from './WaveformBars';
 
-type VoiceStatus = 'idle' | 'listening' | 'processing' | 'speaking' | 'confirming';
+type VoiceStatus = 'idle' | 'connecting' | 'listening' | 'processing' | 'speaking' | 'confirming' | 'error';
 
 interface VoiceBottomBarProps {
   status: VoiceStatus;
@@ -65,10 +65,12 @@ export const VoiceBottomBar: React.FC<VoiceBottomBarProps> = ({
   const label = (() => {
     switch (status) {
       case 'idle': return 'Tap to speak';
+      case 'connecting': return 'Connecting...';
       case 'listening': return 'Listening...';
       case 'processing': return 'Processing...';
       case 'speaking': return 'Speaking...';
       case 'confirming': return 'Confirm your route';
+      case 'error': return 'Tap to try again';
       default: return 'Tap to speak';
     }
   })();

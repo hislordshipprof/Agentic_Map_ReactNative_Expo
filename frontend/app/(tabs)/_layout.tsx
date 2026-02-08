@@ -92,8 +92,6 @@ export default function TabLayout(): JSX.Element {
           ),
         }}
       />
-      {/* Hide legacy route screen from tab bar */}
-      <Tabs.Screen name="route" options={{ href: null }} />
     </Tabs>
   );
 }

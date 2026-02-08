@@ -53,6 +53,12 @@ export interface AudioStreamCallbacks {
 }
 
 /**
+ * Check if ElevenLabs is enabled - if so, this module should be a no-op
+ * to avoid audio conflicts with LiveKit's audio capture
+ */
+const USE_ELEVENLABS = process.env.EXPO_PUBLIC_USE_ELEVENLABS === 'true';
+
+/**
  * Default configuration matching backend STT requirements
  */
 const DEFAULT_CONFIG: Required<AudioStreamConfig> = {
@@ -99,7 +105,30 @@ export interface UseAudioStreamResult {
  * Provides real-time 100ms audio chunks via the onAudioChunk callback.
  * Audio is encoded as PCM 16-bit, 16kHz mono and sent as base64.
  */
-export function useAudioStream(
+/**
+ * No-op implementation for when ElevenLabs is enabled
+ * This completely bypasses expo-audio-studio to avoid audio conflicts with LiveKit
+ */
+function useNoOpAudioStream(): UseAudioStreamResult {
+  // Log once on mount to confirm bypass is active
+  useEffect(() => {
+    console.log('[AudioStream] ElevenLabs mode - expo-audio-studio bypassed');
+  }, []);
+
+  return {
+    startStreaming: async () => false,
+    stopStreaming: async () => {},
+    isStreaming: false,
+    hasPermission: false,
+    requestPermission: async () => false,
+    resetVadState: () => {},
+  };
+}
+
+/**
+ * Real implementation using expo-audio-studio (legacy voice mode)
+ */
+function useRealAudioStream(
   callbacks: Partial<AudioStreamCallbacks>,
   config?: AudioStreamConfig
 ): UseAudioStreamResult {
@@ -377,6 +406,28 @@ export function useAudioStream(
     requestPermission,
     resetVadState,
   };
+}
+
+/**
+ * Main export - conditionally uses real or no-op implementation
+ *
+ * When ElevenLabs is enabled, returns no-op to avoid audio conflicts with LiveKit.
+ * When using legacy voice mode, returns the real expo-audio-studio implementation.
+ */
+export function useAudioStream(
+  callbacks: Partial<AudioStreamCallbacks>,
+  config?: AudioStreamConfig
+): UseAudioStreamResult {
+  // CRITICAL: Check this BEFORE any hooks to avoid calling useAudioRecorder
+  // when ElevenLabs is active. This prevents expo-audio-studio from setting up
+  // audio session listeners that conflict with LiveKit's audio session.
+  if (USE_ELEVENLABS) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    return useNoOpAudioStream();
+  }
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  return useRealAudioStream(callbacks, config);
 }
 
 export default useAudioStream;

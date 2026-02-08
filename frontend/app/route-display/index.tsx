@@ -3,12 +3,15 @@
  *
  * Shows route summary with map, recommended route, alternative routes,
  * and Start Navigation CTA that opens Google Maps directly.
+ *
+ * Supports auto-start navigation from voice commands.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { View, StyleSheet, Text, Linking, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useDispatch, useSelector } from 'react-redux';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -16,6 +19,8 @@ import { RouteMap, RouteSummarySheet } from '@/components/Route';
 import { useRoute } from '@/hooks';
 import { useThemeColors } from '@/theme/useThemeColors';
 import { Spacing, FontFamily, FontSize } from '@/theme';
+import { setAutoStartNavigation } from '@/redux/slices/routeSlice';
+import type { RootState } from '@/redux/store';
 import type { RouteOption } from '@/types/route';
 
 /**
@@ -44,6 +49,7 @@ function buildGoogleMapsNavigationUrl(
 export default function RouteDisplayScreen(): React.ReactElement {
   const router = useRouter();
   const colors = useThemeColors();
+  const dispatch = useDispatch();
   const { height: screenHeight } = useWindowDimensions();
   const {
     pending,
@@ -57,6 +63,47 @@ export default function RouteDisplayScreen(): React.ReactElement {
   } = useRoute();
 
   const [mapExpanded, setMapExpanded] = useState(false);
+  const autoStartHandled = useRef(false);
+
+  // Get auto-start flag from Redux
+  const autoStartNavigation = useSelector((state: RootState) => state.route.autoStartNavigation);
+
+  const baseRoute = pending || confirmed;
+
+  // Auto-start navigation when flag is set (from voice command)
+  useEffect(() => {
+    if (autoStartNavigation && baseRoute && !autoStartHandled.current) {
+      autoStartHandled.current = true;
+      console.log('[RouteDisplay] Auto-starting navigation from voice command');
+      console.log('[RouteDisplay] Route:', baseRoute.id, 'Origin:', baseRoute.origin.location, 'Dest:', baseRoute.destination.location);
+      console.log('[RouteDisplay] Stops:', stops.length);
+
+      // Clear the flag
+      dispatch(setAutoStartNavigation(false));
+
+      // Small delay to let the screen render, then open Google Maps
+      const timer = setTimeout(() => {
+        console.log('[RouteDisplay] Timeout fired - opening Google Maps');
+        confirm();
+        const url = buildGoogleMapsNavigationUrl(
+          baseRoute.origin.location,
+          baseRoute.destination.location,
+          stops
+        );
+        console.log('[RouteDisplay] Google Maps URL:', url);
+        Linking.openURL(url)
+          .then(() => {
+            console.log('[RouteDisplay] Google Maps opened successfully');
+          })
+          .catch((err) => {
+            console.error('[RouteDisplay] Failed to open Google Maps:', err);
+          });
+      }, 500);
+
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [autoStartNavigation, baseRoute, stops, confirm, dispatch]);
 
   // Bottom sheet starts at 50% — pad the map so the route is visible above the sheet
   const mapFitPadding = useMemo(() => ({
@@ -65,8 +112,6 @@ export default function RouteDisplayScreen(): React.ReactElement {
     bottom: Math.round(screenHeight * 0.55),
     left: 60,
   }), [screenHeight]);
-
-  const baseRoute = pending || confirmed;
 
   const handleStartNavigation = () => {
     if (!baseRoute) return;

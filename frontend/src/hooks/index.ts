@@ -16,13 +16,6 @@ export {
 // Route hook (route tab and adjustment)
 export { useRoute } from './useRoute';
 
-// Offline hook (cache and sync)
-export {
-  useOffline,
-  type UseOfflineResult,
-  type CachedData,
-} from './useOffline';
-
 // Location hook (current position for conversation and navigate)
 export {
   useLocation,

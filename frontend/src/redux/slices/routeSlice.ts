@@ -20,6 +20,8 @@ interface ExtendedRouteState extends RouteState {
   showRouteOptions: boolean;
   /** Destination name for display */
   destinationName: string | null;
+  /** Auto-start navigation flag (from voice command) */
+  autoStartNavigation: boolean;
 }
 
 /**
@@ -38,6 +40,7 @@ const initialState: ExtendedRouteState = {
   routeOptions: [],
   showRouteOptions: false,
   destinationName: null,
+  autoStartNavigation: false,
 };
 
 /**
@@ -180,13 +183,6 @@ const routeSlice = createSlice({
       }>
     ) => {
       const opts = action.payload.options;
-      console.log('[routeSlice] setRouteOptions - count:', opts.length);
-      opts.forEach((opt, i) => {
-        console.log(`[routeSlice] Option ${i}: id=${opt.id}, label=${opt.label}, route exists=${!!opt.route}`);
-        if (opt.route) {
-          console.log(`[routeSlice] Option ${i} route: stops=${opt.route.stops?.length || 0}, polyline=${!!opt.route.polyline}`);
-        }
-      });
       state.routeOptions = opts;
       state.destinationName = action.payload.destinationName ?? null;
       // Auto-show options if more than 1
@@ -212,14 +208,11 @@ const routeSlice = createSlice({
      */
     selectRouteOption: (state, action: PayloadAction<RouteOption>) => {
       const option = action.payload;
-      console.log('[routeSlice] selectRouteOption - option.id:', option?.id);
-      console.log('[routeSlice] selectRouteOption - option.route exists:', !!option?.route);
       if (!option?.route) {
         console.error('[routeSlice] selectRouteOption - MISSING ROUTE DATA!');
         state.error = 'Route data missing from selected option';
         return;
       }
-      console.log('[routeSlice] selectRouteOption - setting pending route with', option.route.stops?.length || 0, 'stops');
       state.pending = option.route;
       state.waypoints = option.route.waypoints || [];
       state.stops = option.route.stops || [];
@@ -238,6 +231,13 @@ const routeSlice = createSlice({
       state.routeOptions = [];
       state.showRouteOptions = false;
       state.destinationName = null;
+    },
+
+    /**
+     * Set auto-start navigation flag (from voice command)
+     */
+    setAutoStartNavigation: (state, action: PayloadAction<boolean>) => {
+      state.autoStartNavigation = action.payload;
     },
   },
 });
@@ -260,6 +260,7 @@ export const {
   hideRouteOptionsSheet,
   selectRouteOption,
   clearRouteOptions,
+  setAutoStartNavigation,
 } = routeSlice.actions;
 
 export default routeSlice.reducer;

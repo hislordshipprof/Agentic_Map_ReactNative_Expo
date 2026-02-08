@@ -72,6 +72,14 @@ export interface UseUnifiedVoiceResult {
   reset: () => void;
   /** Which voice backend is active */
   voiceBackend: 'legacy' | 'elevenlabs';
+  /** Latest AI message from ElevenLabs agent */
+  agentMessage: string;
+  /** Whether route planning is in progress */
+  isPlanning: boolean;
+  /** Whether user is currently speaking (from VAD) */
+  isUserSpeaking: boolean;
+  /** Destination and stops being planned (for animated planning UI) */
+  planningData: { destination: string | null; stops: string[] } | null;
 }
 
 /**
@@ -181,6 +189,11 @@ export function useUnifiedVoice(): UseUnifiedVoiceResult {
       clearError,
       reset,
       voiceBackend: 'elevenlabs',
+      // ElevenLabs-specific state
+      agentMessage: elevenLabsVoice.agentMessage,
+      isPlanning: elevenLabsVoice.isPlanning,
+      isUserSpeaking: elevenLabsVoice.isUserSpeaking,
+      planningData: elevenLabsVoice.planningData,
     };
   }
 
@@ -205,6 +218,11 @@ export function useUnifiedVoice(): UseUnifiedVoiceResult {
     clearError: legacyVoice.clearError,
     reset: legacyVoice.reset,
     voiceBackend: 'legacy',
+    // Legacy doesn't have these - defaults
+    agentMessage: '',
+    isPlanning: false,
+    isUserSpeaking: false,
+    planningData: null,
   };
 }
 

@@ -13,9 +13,11 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { PermissionsAndroid, Platform, Linking } from 'react-native';
 import { useConversation } from '@elevenlabs/react-native';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { router } from 'expo-router';
+import type { RootState } from '@/redux/store';
 import { useLocation } from './useLocation';
 import { useUserAnchors } from './useUserAnchors';
 import {
@@ -66,6 +68,38 @@ function mapToVoiceStatus(elStatus: ElevenLabsVoiceStatus): VoiceStatus {
 
 
 /**
+ * Parse destination and stops from agent's planning message.
+ * Used as fallback when tool request parameters aren't available.
+ */
+function parsePlanningFromMessage(message: string): {
+  destination: string | null;
+  stops: string[];
+} {
+  const destMatch = message.match(
+    /(?:route to|going to|heading to|navigate to)\s+(.+?)(?:\s+with\s+stop|\s*$)/i
+  );
+  const stopsMatch = message.match(/stops?\s+at\s+(.+)/i);
+
+  let destination: string | null = null;
+  const stops: string[] = [];
+
+  if (destMatch) {
+    destination = destMatch[1].trim().replace(/[.,]$/, '');
+  }
+
+  if (stopsMatch) {
+    const stopsText = stopsMatch[1];
+    stopsText
+      .split(/(?:,\s*|\s+and\s+)/)
+      .map((s) => s.trim().replace(/[.,]$/, ''))
+      .filter(Boolean)
+      .forEach((s) => stops.push(s));
+  }
+
+  return { destination, stops };
+}
+
+/**
  * useElevenLabsVoice hook
  */
 export function useElevenLabsVoice() {
@@ -80,19 +114,79 @@ export function useElevenLabsVoice() {
   const [error, setError] = useState<string | null>(null);
   const [isMicMuted, setIsMicMuted] = useState(false);
 
+  // AI message and planning state
+  const [agentMessage, setAgentMessage] = useState<string>('');
+  const [isPlanning, setIsPlanning] = useState(false);
+  const [isUserSpeaking, setIsUserSpeaking] = useState(false);
+  const [planningData, setPlanningData] = useState<{
+    destination: string | null;
+    stops: string[];
+  } | null>(null);
+
   // Refs
   const sessionIdRef = useRef<string | null>(null);
   const isStartingRef = useRef(false);
+  const isPlanningRef = useRef(false);
+
+  // Get route from Redux for start_navigation
+  const pendingRoute = useSelector((state: RootState) => state.route.pending);
+  const confirmedRoute = useSelector((state: RootState) => state.route.confirmed);
+  const routeStops = useSelector((state: RootState) => state.route.stops);
+  const currentRouteRef = useRef<Route | null>(null);
+  const routeStopsRef = useRef<RouteStop[]>([]);
 
   // Use refs to always access the latest values (avoids stale closure issues)
   const currentLocationRef = useRef(currentLocation);
   const anchorCoordinatesRef = useRef(anchorCoordinates);
   const anchorsHydratedRef = useRef(anchorsHydrated);
 
+  // Ref for latest agent message (used in tool request callback)
+  const agentMessageRef = useRef(agentMessage);
+  agentMessageRef.current = agentMessage;
+
   // Keep refs updated with latest values
   currentLocationRef.current = currentLocation;
   anchorCoordinatesRef.current = anchorCoordinates;
   anchorsHydratedRef.current = anchorsHydrated;
+  currentRouteRef.current = pendingRoute || confirmedRoute;
+  routeStopsRef.current = routeStops;
+
+  /**
+   * Extract destination and stops from the plan_route tool request parameters.
+   * Falls back to parsing the last agent message text.
+   */
+  const extractPlanningData = useCallback(
+    (params?: Record<string, unknown>) => {
+      // Try tool parameters first
+      if (params) {
+        const destination = (params.destination_name || params.destination) as string | undefined;
+        const rawStops = params.stops;
+        let stops: string[] = [];
+        if (Array.isArray(rawStops)) {
+          stops = rawStops.map((s) => (typeof s === 'string' ? s : String(s)));
+        } else if (typeof rawStops === 'string') {
+          stops = rawStops.split(',').map((s) => s.trim()).filter(Boolean);
+        }
+        if (destination || stops.length > 0) {
+          console.log('[ElevenLabs] Planning data from tool params:', { destination, stops });
+          setPlanningData({ destination: destination || null, stops });
+          return;
+        }
+      }
+
+      // Fallback: parse from the last agent message
+      const lastMsg = agentMessageRef.current;
+      if (lastMsg) {
+        const parsed = parsePlanningFromMessage(lastMsg);
+        console.log('[ElevenLabs] Planning data from message parse:', parsed);
+        setPlanningData(parsed);
+      } else {
+        // Last resort: show generic planning animation
+        setPlanningData({ destination: null, stops: [] });
+      }
+    },
+    [],
+  );
 
   // Debug: Log when anchors change
   useEffect(() => {
@@ -105,18 +199,31 @@ export function useElevenLabsVoice() {
 
   // ElevenLabs conversation hook
   const conversation = useConversation({
-    onConnect: () => {
-      console.log('[ElevenLabs] Connected');
+    onConnect: ({ conversationId }) => {
+      console.log('[ElevenLabs] Connected - conversationId:', conversationId);
       setStatus('connected');
       dispatch(setVoiceStatus('listening'));
       dispatch(clearVoiceError());
     },
 
-    onDisconnect: () => {
-      console.log('[ElevenLabs] Disconnected');
+    onDisconnect: (details) => {
+      // details contains { reason: "user" | "agent" | "error" }
+      console.log('[ElevenLabs] Disconnected - reason:', details?.reason || 'unknown');
       setStatus('idle');
       dispatch(resetVoice());
       isStartingRef.current = false;
+    },
+
+    // Track VAD scores to verify audio is being captured
+    onVadScore: (data) => {
+      // VAD score ranges from 0 to 1, higher means voice detected
+      const speaking = data.vadScore > 0.3;
+      if (speaking !== isUserSpeaking) {
+        setIsUserSpeaking(speaking);
+      }
+      if (speaking) {
+        console.log('[ElevenLabs] VAD detected voice:', data.vadScore.toFixed(2));
+      }
     },
 
     onMessage: (message) => {
@@ -126,12 +233,23 @@ export function useElevenLabsVoice() {
       if (message.source === 'user' && message.message) {
         setLocalTranscript(message.message);
         dispatch(setTranscript(message.message));
+        setIsUserSpeaking(false); // User finished speaking
       }
 
-      // Handle agent responses
+      // Handle agent responses - expose for UI display with streaming
       if (message.source === 'ai' && message.message) {
-        // Agent is responding - could log or display
-        console.log('[ElevenLabs] Agent says:', message.message);
+        const msg = message.message;
+        console.log('[ElevenLabs] Agent says:', msg);
+        setAgentMessage(msg);
+
+        // If we were in planning state and agent speaks again, planning is complete
+        // (The agent is now reporting the route results)
+        if (isPlanningRef.current) {
+          console.log('[ElevenLabs] Planning complete — agent reporting results');
+          setIsPlanning(false);
+          isPlanningRef.current = false;
+          setPlanningData(null);
+        }
       }
     },
 
@@ -167,6 +285,44 @@ export function useElevenLabsVoice() {
         setStatus('connecting');
         dispatch(setVoiceStatus('connecting'));
       }
+    },
+
+    // Track server tool calls (these are server-side tools like plan_route)
+    onAgentToolRequest: (request) => {
+      console.log('[ElevenLabs] Tool request:', JSON.stringify(request));
+      const req = request as {
+        tool_name?: string;
+        tool_call_id?: string;
+        parameters?: Record<string, unknown>;
+      };
+      if (req.tool_name === 'plan_route' || req.tool_name === 'add_stop') {
+        console.log('[ElevenLabs] Planning route...');
+        setIsPlanning(true);
+        extractPlanningData(req.parameters);
+      }
+    },
+
+    onAgentToolResponse: (response) => {
+      console.log('[ElevenLabs] Tool response:', response);
+
+      const res = response as {
+        tool_name?: string;
+        is_called?: boolean;
+        is_error?: boolean;
+      };
+
+      // plan_route webhook dispatched — show planning UI while backend processes
+      if (res.tool_name === 'plan_route' && res.is_called) {
+        console.log('[ElevenLabs] plan_route webhook dispatched — showing planning UI');
+        setIsPlanning(true);
+        isPlanningRef.current = true;
+        extractPlanningData();
+      }
+    },
+
+    // Debug: Catch all unhandled events
+    onDebug: (event) => {
+      console.log('[ElevenLabs] Debug event:', JSON.stringify(event).substring(0, 200));
     },
 
     // Handle client tool calls from agent
@@ -318,7 +474,7 @@ export function useElevenLabsVoice() {
 
       /**
        * Start turn-by-turn navigation
-       * First shows the route summary, then user can tap to start driving
+       * Directly opens Google Maps for navigation
        */
       start_navigation: (parameters: unknown): string => {
         const params = parameters as {
@@ -328,18 +484,59 @@ export function useElevenLabsVoice() {
         console.log('[ElevenLabs] start_navigation called:', params);
 
         try {
-          // Confirm the pending route (this marks it as ready)
+          // Get the current route from ref
+          const route = currentRouteRef.current;
+          const stops = routeStopsRef.current;
+
+          if (!route) {
+            console.error('[ElevenLabs] No route available to start navigation');
+            return 'No route to navigate. Please plan a route first.';
+          }
+
+          console.log('[ElevenLabs] Starting navigation with route:', route.id);
+          console.log('[ElevenLabs] Origin:', route.origin.location);
+          console.log('[ElevenLabs] Destination:', route.destination.location);
+          console.log('[ElevenLabs] Stops:', stops.length);
+
+          // Confirm the pending route
           dispatch(confirmRoute());
 
-          // Navigate to the route tab to show the summary screen first
-          // The route tab will show the confirmed route with a "Start Driving" button
+          // Build Google Maps URL
+          const origin = route.origin.location;
+          const destination = route.destination.location;
+          const o = `${origin.lat},${origin.lng}`;
+          const d = `${destination.lat},${destination.lng}`;
+          const wp = stops.map((s) => `${s.location.lat},${s.location.lng}`).join('|');
+
+          const urlParams = new URLSearchParams({
+            api: '1',
+            origin: o,
+            destination: d,
+            dir_action: 'navigate',
+          });
+          if (wp) {
+            urlParams.set('waypoints', wp);
+          }
+          const url = `https://www.google.com/maps/dir/?${urlParams.toString()}`;
+
+          console.log('[ElevenLabs] Opening Google Maps URL:', url);
+
+          // Open Google Maps directly
+          Linking.openURL(url)
+            .then(() => {
+              console.log('[ElevenLabs] Google Maps opened successfully');
+            })
+            .catch((err) => {
+              console.error('[ElevenLabs] Failed to open Google Maps:', err);
+            });
+
+          // Also navigate to route-display for when user returns
           router.push('/route-display');
 
-          console.log('[ElevenLabs] Route confirmed, showing summary for:', params.route_id);
-          return 'Route confirmed. Showing route summary - tap Start Driving when ready.';
+          return 'Starting navigation now. Opening Google Maps.';
         } catch (err) {
-          console.error('[ElevenLabs] Failed to confirm route:', err);
-          return 'Failed to confirm route';
+          console.error('[ElevenLabs] Failed to start navigation:', err);
+          return 'Failed to start navigation';
         }
       },
 
@@ -402,6 +599,36 @@ export function useElevenLabsVoice() {
     dispatch(setVoiceStatus('connecting'));
     setError(null);
 
+    // Check and request microphone permission on Android
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone Permission',
+            message: 'This app needs microphone access for voice conversations.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          },
+        );
+        console.log('[ElevenLabs] Microphone permission:', granted);
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          console.error('[ElevenLabs] Microphone permission denied');
+          setStatus('error');
+          setError('Microphone permission denied');
+          dispatch(setVoiceError({
+            message: 'Microphone permission is required for voice mode.',
+            recoverable: true,
+          }));
+          isStartingRef.current = false;
+          return;
+        }
+      } catch (err) {
+        console.error('[ElevenLabs] Permission request error:', err);
+      }
+    }
+
     // With Redux persist + PersistGate, anchors should already be hydrated
     // This check is a safeguard in case hydration hasn't completed yet
     if (!anchorsHydratedRef.current) {
@@ -434,16 +661,37 @@ export function useElevenLabsVoice() {
         dynamicVariables.user_location_lng = location.lng.toString();
       }
 
-      // Add home anchor if saved
+      // Add home anchor if saved, otherwise use current location as fallback
       if (anchors.home) {
         dynamicVariables.home_lat = anchors.home.lat.toString();
         dynamicVariables.home_lng = anchors.home.lng.toString();
+      } else if (location) {
+        // Fallback: use current location if home not set
+        dynamicVariables.home_lat = location.lat.toString();
+        dynamicVariables.home_lng = location.lng.toString();
+      } else {
+        // Last resort: send zeros to satisfy required variables
+        dynamicVariables.home_lat = '0';
+        dynamicVariables.home_lng = '0';
       }
 
-      // Add work anchor if saved
+      // Add work anchor if saved, otherwise use home or current location as fallback
+      // ElevenLabs agent requires these variables even if not set
       if (anchors.work) {
         dynamicVariables.work_lat = anchors.work.lat.toString();
         dynamicVariables.work_lng = anchors.work.lng.toString();
+      } else if (anchors.home) {
+        // Fallback: use home location if work not set
+        dynamicVariables.work_lat = anchors.home.lat.toString();
+        dynamicVariables.work_lng = anchors.home.lng.toString();
+      } else if (location) {
+        // Fallback: use current location
+        dynamicVariables.work_lat = location.lat.toString();
+        dynamicVariables.work_lng = location.lng.toString();
+      } else {
+        // Last resort: send zeros to satisfy required variables
+        dynamicVariables.work_lat = '0';
+        dynamicVariables.work_lng = '0';
       }
 
       console.log('[ElevenLabs] ========== SESSION START CONTEXT ==========');
@@ -531,6 +779,12 @@ export function useElevenLabsVoice() {
     transcript,
     error,
     isMicMuted,
+
+    // AI message and planning state
+    agentMessage,
+    isPlanning,
+    isUserSpeaking,
+    planningData,
 
     // Actions
     startSession,

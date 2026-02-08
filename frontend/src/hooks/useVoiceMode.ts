@@ -116,6 +116,12 @@ export interface UseVoiceModeResult {
 }
 
 /**
+ * Check if ElevenLabs is enabled - if so, this hook should be a no-op
+ * to avoid audio conflicts with LiveKit
+ */
+const USE_ELEVENLABS = process.env.EXPO_PUBLIC_USE_ELEVENLABS === 'true';
+
+/**
  * useVoiceMode hook
  */
 export function useVoiceMode(): UseVoiceModeResult {
@@ -627,8 +633,12 @@ export function useVoiceMode(): UseVoiceModeResult {
   /**
    * Pre-request microphone permission when voice mode is enabled
    * This speeds up the mic tap response by avoiding permission dialog during recording
+   * SKIP when ElevenLabs is enabled to avoid audio conflicts with LiveKit
    */
   useEffect(() => {
+    // Skip legacy audio setup when using ElevenLabs
+    if (USE_ELEVENLABS) return;
+
     if (isVoiceModeEnabled && !hasPermission) {
       console.log('[useVoiceMode] Pre-requesting microphone permission');
       requestPermission().then((granted) => {
