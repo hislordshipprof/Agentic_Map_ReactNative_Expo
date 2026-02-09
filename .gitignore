@@ -84,7 +84,9 @@ Thumbs.db
 logs/
 *.log
 backenderror.md
+backendlogText.md
 frontendlog.md
+nul
 
 # Temporary files
 tmp/
