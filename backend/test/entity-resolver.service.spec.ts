@@ -5,6 +5,7 @@ describe('EntityResolverService', () => {
   let service: EntityResolverService;
   let mockPlaceSearch: { searchPlaces: jest.Mock };
   let mockMaps: { geocode: jest.Mock };
+  let mockGooglePlaces: { searchAlongRoute: jest.Mock };
 
   beforeEach(() => {
     mockPlaceSearch = {
@@ -13,7 +14,11 @@ describe('EntityResolverService', () => {
     mockMaps = {
       geocode: jest.fn(),
     };
-    service = new EntityResolverService(mockMaps as any, mockPlaceSearch as any);
+    mockGooglePlaces = {
+      // Default: fail so tests fall back to legacy corridor search
+      searchAlongRoute: jest.fn().mockRejectedValue(new Error('SAR not enabled')),
+    };
+    service = new EntityResolverService(mockMaps as any, mockPlaceSearch as any, mockGooglePlaces as any);
   });
 
   describe('resolveStopsAlongCorridor', () => {

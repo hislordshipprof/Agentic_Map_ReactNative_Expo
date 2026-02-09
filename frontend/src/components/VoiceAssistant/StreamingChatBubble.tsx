@@ -36,6 +36,9 @@ export const StreamingChatBubble: React.FC<StreamingChatBubbleProps> = ({
   const [isComplete, setIsComplete] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const indexRef = useRef(0);
+  // Use ref to avoid restarting effect when callback reference changes
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     // Reset when text changes
@@ -60,7 +63,7 @@ export const StreamingChatBubble: React.FC<StreamingChatBubbleProps> = ({
           clearInterval(intervalRef.current);
         }
         setIsComplete(true);
-        onComplete?.();
+        onCompleteRef.current?.();
       }
     }, interval);
 
@@ -69,7 +72,7 @@ export const StreamingChatBubble: React.FC<StreamingChatBubbleProps> = ({
         clearInterval(intervalRef.current);
       }
     };
-  }, [text, charsPerSecond, onComplete]);
+  }, [text, charsPerSecond]);
 
   // Don't render empty bubble
   if (!text && !displayedText) return null;

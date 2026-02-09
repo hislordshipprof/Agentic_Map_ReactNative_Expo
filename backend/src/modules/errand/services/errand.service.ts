@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Coordinates } from '../../../common/types';
 import type { DetourCategory } from '../../../common/constants/detour.constants';
-import { GoogleMapsService } from '../../maps/google-maps.service';
+import { GoogleMapsService, type DirectionsResult } from '../../maps/google-maps.service';
 import type { PlaceCandidate } from '../../places/google-places.service';
 import { ClusterService, type StopCluster } from './cluster.service';
 import { DetourBufferService } from './detour-buffer.service';
@@ -105,35 +105,46 @@ export class ErrandService {
       dest = await this.entity.resolveDestination(inp.destination.name, anchors, inp.origin);
       this.logger.log(`[navigateWithStops] STEP 1: Resolved destination to "${dest.name}" at (${dest.location.lat}, ${dest.location.lng})`);
     } else {
-      // HAS STOPS + NEEDS RESOLUTION: Find nearest stop first, then resolve destination near it
-      this.logger.log(`[navigateWithStops] STEP 1a: Finding nearest stop to determine destination search area...`);
+      // HAS STOPS + NEEDS RESOLUTION: Resolve destination and nearest stop IN PARALLEL
+      this.logger.log(`[navigateWithStops] STEP 1: Resolving destination + nearest stop in parallel...`);
 
-      // Quick search for the first stop to find a reference point
       const firstStopName = inp.stops[0].name;
-      const nearestStopResults = await this.entity.resolveStops(
-        [firstStopName],
-        inp.origin,
-        10000, // 10km radius from origin
-      );
+
+      // Fire both searches concurrently (saves ~0.5s vs sequential)
+      const [nearestStopResults, optimisticDest] = await Promise.all([
+        this.entity.resolveStops([firstStopName], inp.origin, 10000),
+        this.entity.resolveDestination(inp.destination.name, anchors, inp.origin),
+      ]);
 
       if (nearestStopResults.length > 0) {
         const nearestStop = nearestStopResults[0].place;
         this.logger.log(`[navigateWithStops] STEP 1b: Found nearest "${firstStopName}" at (${nearestStop.location.lat}, ${nearestStop.location.lng})`);
 
-        // Now resolve destination near the stop, not near origin
-        dest = await this.entity.resolveDestination(inp.destination.name, anchors, nearestStop.location);
-        this.logger.log(`[navigateWithStops] STEP 1c: Resolved destination "${dest.name}" NEAR STOP at (${dest.location.lat}, ${dest.location.lng})`);
+        // Check if optimistic destination is close enough to nearest stop
+        const destToStopDist = haversineM(optimisticDest.location, nearestStop.location);
+        if (destToStopDist < 50_000) {
+          // Destination is within 50km of nearest stop - use optimistic result
+          dest = optimisticDest;
+          this.logger.log(`[navigateWithStops] STEP 1c: Using parallel-resolved destination "${dest.name}" at (${dest.location.lat}, ${dest.location.lng}) (${(destToStopDist / 1000).toFixed(1)}km from stop)`);
+        } else {
+          // Destination is far from stop - re-resolve near stop for better clustering
+          dest = await this.entity.resolveDestination(inp.destination.name, anchors, nearestStop.location);
+          this.logger.log(`[navigateWithStops] STEP 1c: Re-resolved destination "${dest.name}" NEAR STOP at (${dest.location.lat}, ${dest.location.lng})`);
+        }
       } else {
-        // Fallback: no stop found, resolve destination near origin
-        this.logger.warn(`[navigateWithStops] STEP 1b: No stops found, falling back to origin-based destination`);
-        dest = await this.entity.resolveDestination(inp.destination.name, anchors, inp.origin);
+        // Fallback: no stop found, use optimistic destination
+        this.logger.warn(`[navigateWithStops] STEP 1b: No stops found, using origin-based destination`);
+        dest = optimisticDest;
         this.logger.log(`[navigateWithStops] STEP 1c: Resolved destination to "${dest.name}" at (${dest.location.lat}, ${dest.location.lng})`);
       }
     }
 
-    // STEP 2: Extract route corridor
-    this.logger.log(`[navigateWithStops] STEP 2: Extracting route corridor...`);
-    const routeCorridor = await this.corridor.extractCorridor(inp.origin, dest.location);
+    // STEP 2: Extract route corridor (voice mode uses coarser sampling for speed)
+    this.logger.log(`[navigateWithStops] STEP 2: Extracting route corridor${inp.voiceMode ? ' (voice mode - coarser sampling)' : ''}...`);
+    const corridorConfig = inp.voiceMode
+      ? { samplingIntervalM: 3000, minPoints: 2 }  // Fewer points = fewer searches
+      : undefined;
+    const routeCorridor = await this.corridor.extractCorridor(inp.origin, dest.location, corridorConfig);
     const bufferM = this.detour.calculateBuffer(routeCorridor.totalDistanceM);
 
     this.logger.log(`[navigateWithStops]   Direct distance: ${(routeCorridor.totalDistanceM / 1609.34).toFixed(1)} miles`);
@@ -174,9 +185,11 @@ export class ErrandService {
     // STEP 3: Multi-candidate search along corridor
     this.logger.log(`[navigateWithStops] STEP 3: Searching for candidates along corridor...`);
     const stopQueries = inp.stops.map(s => s.name);
+    // Voice mode: fewer candidates (4 vs 8) = fewer combinations (16 vs 64), faster clustering
+    const maxCandidates = inp.voiceMode ? 4 : 8;
     const candidates = await this.entity.resolveStopsAlongCorridor(stopQueries, routeCorridor, {
       searchRadiusM: 5000,
-      maxCandidatesPerCategory: 8,
+      maxCandidatesPerCategory: maxCandidates,
     });
 
     // Check which categories found results
@@ -306,7 +319,12 @@ export class ErrandService {
    * @param voiceMode When true, only builds 1 option (faster for voice interactions)
    */
   private async buildRouteOptions(
-    evaluatedClusters: Array<StopCluster & { totalDurationMin: number; extraMinutes: number }>,
+    evaluatedClusters: Array<StopCluster & {
+      totalDurationMin: number;
+      extraMinutes: number;
+      cachedDirections: DirectionsResult;
+      orderedStopIds: string[];
+    }>,
     origin: Coordinates,
     dest: { name: string; location: Coordinates },
     routeCorridor: Awaited<ReturnType<RouteCorridorService['extractCorridor']>>,
@@ -355,25 +373,28 @@ export class ErrandService {
 
   /**
    * Build a single route option from a cluster.
+   * Uses cached directions from Step 5 evaluation to avoid duplicate API calls.
    */
   private async buildSingleRouteOption(
-    cluster: StopCluster & { totalDurationMin: number; extraMinutes: number },
+    cluster: StopCluster & {
+      totalDurationMin: number;
+      extraMinutes: number;
+      cachedDirections: DirectionsResult;
+      orderedStopIds: string[];
+    },
     origin: Coordinates,
     dest: { name: string; location: Coordinates },
     routeCorridor: Awaited<ReturnType<RouteCorridorService['extractCorridor']>>,
     bufferM: number,
     index: number,
   ): Promise<RouteOption> {
-    // Optimize stop order
-    const stopInputs = cluster.stops.map(s => ({ id: s.placeId, location: s.location }));
-    const opt = this.optimization.optimizeStopOrder(origin, dest.location, stopInputs);
-    const orderedStops = (opt.sequence.filter((x): x is string => x !== 'start' && x !== 'end'))
-      .map(id => cluster.stops.find(s => s.placeId === id)!);
+    // Use the stop order already computed in Step 5
+    const orderedStops = cluster.orderedStopIds
+      .map(id => cluster.stops.find(s => s.placeId === id)!)
+      .filter(Boolean);
 
-    // Get directions
-    const waypointLocs = orderedStops.map(s => s.location);
-    const fullDir = await this.maps.getDirections(origin, dest.location, waypointLocs);
-    if (!fullDir) throw new Error('Could not get directions for cluster');
+    // Reuse directions from Step 5 evaluation (eliminates duplicate Routes API call)
+    const fullDir = cluster.cachedDirections;
 
     // Build ordered stops with metadata
     const orderedStopsWithMeta = this.buildOrderedStopsWithMeta(
@@ -422,25 +443,38 @@ export class ErrandService {
    * Evaluate clusters by calculating actual driving time for each.
    * PARALLELIZED: All clusters are evaluated concurrently for faster response.
    */
+  /** Evaluated cluster with cached directions to avoid re-fetching in Step 6. */
   private async evaluateClustersWithDrivingTime(
     clusters: StopCluster[],
     origin: Coordinates,
     destination: Coordinates,
     directDurationMin: number,
-  ): Promise<Array<StopCluster & { totalDurationMin: number; extraMinutes: number }>> {
+  ): Promise<Array<StopCluster & {
+    totalDurationMin: number;
+    extraMinutes: number;
+    cachedDirections: DirectionsResult;
+    orderedStopIds: string[];
+  }>> {
     this.logger.log(`[evaluateClusters] Evaluating ${clusters.length} clusters in parallel...`);
     const startTime = Date.now();
 
+    type EvaluatedCluster = StopCluster & {
+      totalDurationMin: number;
+      extraMinutes: number;
+      cachedDirections: DirectionsResult;
+      orderedStopIds: string[];
+    };
+
     // Evaluate all clusters in parallel
-    const evaluationPromises = clusters.map(async (cluster) => {
+    const evaluationPromises = clusters.map(async (cluster): Promise<EvaluatedCluster | null> => {
       try {
         // Optimize stop order within cluster
         const stopInputs = cluster.stops.map(s => ({ id: s.placeId, location: s.location }));
         const opt = this.optimization.optimizeStopOrder(origin, destination, stopInputs);
-        const orderedLocs = (opt.sequence.filter((x): x is string => x !== 'start' && x !== 'end'))
-          .map(id => stopInputs.find(s => s.id === id)!.location);
+        const orderedStopIds = opt.sequence.filter((x): x is string => x !== 'start' && x !== 'end');
+        const orderedLocs = orderedStopIds.map(id => stopInputs.find(s => s.id === id)!.location);
 
-        // Get actual driving time
+        // Get actual driving time (cache this for Step 6 reuse)
         const dir = await this.maps.getDirections(origin, destination, orderedLocs);
         if (dir) {
           const extraMinutes = Math.max(0, dir.totalDurationMin - directDurationMin);
@@ -449,6 +483,8 @@ export class ErrandService {
             ...cluster,
             totalDurationMin: dir.totalDurationMin,
             extraMinutes,
+            cachedDirections: dir,
+            orderedStopIds,
           };
         }
         return null;
@@ -463,7 +499,7 @@ export class ErrandService {
 
     // Filter out failed evaluations and sort by total duration
     const evaluated = results
-      .filter((r): r is StopCluster & { totalDurationMin: number; extraMinutes: number } => r !== null)
+      .filter((r): r is EvaluatedCluster => r !== null)
       .sort((a, b) => a.totalDurationMin - b.totalDurationMin);
 
     const elapsed = Date.now() - startTime;

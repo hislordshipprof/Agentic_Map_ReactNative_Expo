@@ -34,9 +34,16 @@ export class ErrandController {
         location: dto.destination.location,
       },
       stops: dto.stops.map((s) => ({ name: s.name, category: s.category })),
-      anchors: [],
+      anchors: (dto.anchors ?? []).map((a) => ({ name: a.name, location: a.location })),
     });
-    return { route: result.route, excludedStops: result.excludedStops };
+    return {
+      route: result.route,
+      routeOptions: result.routeOptions,
+      excludedStops: result.excludedStops,
+      warnings: result.warnings,
+      destination: result.destination,
+      directTimeMin: result.directTimeMin,
+    };
   }
 
   @Post('recalculate')

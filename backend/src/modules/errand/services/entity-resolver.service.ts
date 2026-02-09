@@ -2,7 +2,8 @@ import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import type { Coordinates } from '../../../common/types';
 import { GoogleMapsService } from '../../maps/google-maps.service';
 import { PlaceSearchService } from '../../places/place-search.service';
-import type { PlaceCandidate } from '../../places/google-places.service';
+import { GooglePlacesService } from '../../places/google-places.service';
+import type { PlaceCandidate, PlaceCandidateWithDetour } from '../../places/google-places.service';
 import type { RouteCorridor } from './route-corridor.service';
 
 export interface AnchorInput {
@@ -50,6 +51,7 @@ export class EntityResolverService {
   constructor(
     private readonly maps: GoogleMapsService,
     private readonly placeSearch: PlaceSearchService,
+    private readonly googlePlaces: GooglePlacesService,
   ) {}
 
   /**
@@ -67,8 +69,28 @@ export class EntityResolverService {
   ): Promise<ResolvedDestination> {
     const a = this.matchAnchor(text, anchors);
     if (a) return { name: a.name, location: a.location, source: 'anchor' };
+
+    // Try geocode first
     const g = await this.maps.geocode(text);
-    if (g) return { name: g.address, location: g.location, source: 'geocode' };
+
+    // If we have a hint location, validate geocode result isn't too far away.
+    // Geocoding place names (like "Church of Pentecost") can return random
+    // addresses globally. We want to find places NEAR the hint location.
+    const MAX_GEOCODE_DISTANCE_KM = 50; // If geocode result is > 50km from hint, skip it
+    if (g && hintLocation) {
+      const distKm = this.haversineM(hintLocation, g.location) / 1000;
+      if (distKm > MAX_GEOCODE_DISTANCE_KM) {
+        this.logger.log(`[resolveDestination] Geocode result "${g.address}" is ${distKm.toFixed(0)}km from hint location, skipping to try Places search`);
+        // Don't return geocode result, fall through to place search
+      } else {
+        this.logger.log(`[resolveDestination] Geocode result "${g.address}" is ${distKm.toFixed(1)}km from hint location, using it`);
+        return { name: g.address, location: g.location, source: 'geocode' };
+      }
+    } else if (g) {
+      // No hint location - use geocode result as-is
+      return { name: g.address, location: g.location, source: 'geocode' };
+    }
+
     if (hintLocation) {
       // OPTION E: Use small radius first to find truly nearby places
       // Google Text Search ranks by "relevance" not distance, so a large radius
@@ -186,6 +208,120 @@ export class EntityResolverService {
     corridor: RouteCorridor,
     config?: CorridorSearchConfig,
   ): Promise<CategoryCandidates> {
+    // Try Search Along Route API first (2 API calls vs 10+)
+    try {
+      const result = await this.resolveStopsAlongRoute(queries, corridor, config);
+
+      // Verify we got results for every category
+      const emptyCategories = queries.filter((q) => (result[q]?.length ?? 0) === 0);
+      if (emptyCategories.length === 0) {
+        return result;
+      }
+
+      // Partial success: only re-search empty categories via legacy, keep SAR results for the rest
+      this.logger.warn(
+        `[resolveStopsAlongCorridor] SAR found ${queries.length - emptyCategories.length}/${queries.length} categories. ` +
+        `Empty: ${emptyCategories.join(', ')}. Falling back to legacy for empty categories only.`,
+      );
+      const legacyResult = await this.resolveStopsAlongCorridorLegacy(emptyCategories, corridor, config);
+
+      // Merge: keep SAR results for successful categories, use legacy for empty ones
+      for (const q of queries) {
+        if ((result[q]?.length ?? 0) > 0) {
+          legacyResult[q] = result[q];
+        }
+      }
+      return legacyResult;
+    } catch (error) {
+      this.logger.warn(
+        `[resolveStopsAlongCorridor] Search Along Route failed: ${error}. Falling back to corridor point search.`,
+      );
+    }
+
+    return this.resolveStopsAlongCorridorLegacy(queries, corridor, config);
+  }
+
+  /**
+   * NEW: Search Along Route using Google's NEW Places API.
+   * Makes 1 API call per category (vs 5+ corridor point searches).
+   * Returns places biased by minimal detour along the encoded polyline.
+   */
+  private async resolveStopsAlongRoute(
+    queries: string[],
+    corridor: RouteCorridor,
+    config?: CorridorSearchConfig,
+  ): Promise<CategoryCandidates> {
+    const maxPerCategory = config?.maxCandidatesPerCategory ?? 10;
+
+    this.logger.log(`[resolveStopsAlongRoute] ========== SEARCH ALONG ROUTE START ==========`);
+    this.logger.log(`[resolveStopsAlongRoute] Categories: ${queries.join(', ')}`);
+    this.logger.log(`[resolveStopsAlongRoute] Polyline length: ${corridor.polyline.length} chars`);
+
+    // Search ALL categories in parallel (1 call per category)
+    const searchResults = await Promise.all(
+      queries.map(async (query) => {
+        const results = await this.googlePlaces.searchAlongRoute(
+          query,
+          corridor.polyline,
+          maxPerCategory + 5, // fetch extra to account for filtering
+        );
+        return { query, results };
+      }),
+    );
+
+    // Build CategoryCandidates with filtering
+    const candidates: CategoryCandidates = {};
+    for (const query of queries) {
+      candidates[query] = [];
+    }
+
+    for (const { query, results } of searchResults) {
+      const seen = new Set<string>();
+
+      for (const place of results) {
+        if (candidates[query].length >= maxPerCategory) break;
+        if (seen.has(place.placeId)) continue;
+
+        // Name relevance check
+        if (!this.isNameRelevant(place.name, query)) continue;
+
+        // Location dedup: skip if another candidate is within 100m
+        const isDuplicate = candidates[query].some(
+          (existing) => this.haversineM(existing.location, place.location) < 100,
+        );
+        if (isDuplicate) continue;
+
+        seen.add(place.placeId);
+        candidates[query].push(place);
+
+        const detourInfo = place.detourDurationSec != null
+          ? ` (detour: ${Math.round(place.detourDurationSec / 60)}min)`
+          : '';
+        this.logger.log(
+          `[resolveStopsAlongRoute]   Found "${query}": "${place.name}" at (${place.location.lat.toFixed(4)}, ${place.location.lng.toFixed(4)})${detourInfo}`,
+        );
+      }
+    }
+
+    // Log summary
+    this.logger.log(`[resolveStopsAlongRoute] ========== RESULTS ==========`);
+    for (const query of queries) {
+      this.logger.log(`[resolveStopsAlongRoute] ${query}: ${candidates[query].length} candidates`);
+    }
+    this.logger.log(`[resolveStopsAlongRoute] ========== SEARCH ALONG ROUTE END ==========`);
+
+    return candidates;
+  }
+
+  /**
+   * LEGACY: Resolve stop queries using corridor point × category grid search.
+   * Used as fallback when Search Along Route API is unavailable or returns empty.
+   */
+  private async resolveStopsAlongCorridorLegacy(
+    queries: string[],
+    corridor: RouteCorridor,
+    config?: CorridorSearchConfig,
+  ): Promise<CategoryCandidates> {
     const cfg: Required<CorridorSearchConfig> = {
       searchRadiusM: config?.searchRadiusM ?? 5000,
       maxCandidatesPerCategory: config?.maxCandidatesPerCategory ?? 10,
@@ -193,10 +329,10 @@ export class EntityResolverService {
       corridorPointSkip: config?.corridorPointSkip ?? 1,
     };
 
-    this.logger.log(`[resolveStopsAlongCorridor] ========== MULTI-CANDIDATE SEARCH START ==========`);
-    this.logger.log(`[resolveStopsAlongCorridor] Categories: ${queries.join(', ')}`);
-    this.logger.log(`[resolveStopsAlongCorridor] Corridor points: ${corridor.corridorPoints.length}`);
-    this.logger.log(`[resolveStopsAlongCorridor] Config: radius=${cfg.searchRadiusM}m, maxPerCategory=${cfg.maxCandidatesPerCategory}, skip=${cfg.corridorPointSkip}`);
+    this.logger.log(`[resolveStopsAlongCorridorLegacy] ========== MULTI-CANDIDATE SEARCH START ==========`);
+    this.logger.log(`[resolveStopsAlongCorridorLegacy] Categories: ${queries.join(', ')}`);
+    this.logger.log(`[resolveStopsAlongCorridorLegacy] Corridor points: ${corridor.corridorPoints.length}`);
+    this.logger.log(`[resolveStopsAlongCorridorLegacy] Config: radius=${cfg.searchRadiusM}m, maxPerCategory=${cfg.maxCandidatesPerCategory}, skip=${cfg.corridorPointSkip}`);
 
     // Initialize result map
     const candidates: CategoryCandidates = {};
@@ -212,54 +348,78 @@ export class EntityResolverService {
 
     // Determine which corridor points to search from
     const searchPoints = this.selectSearchPoints(corridor, cfg.corridorPointSkip);
-    this.logger.log(`[resolveStopsAlongCorridor] Using ${searchPoints.length} search points`);
+    this.logger.log(`[resolveStopsAlongCorridorLegacy] Using ${searchPoints.length} search points`);
 
-    // Search from each selected corridor point
+    // Search ALL corridor points × ALL categories in PARALLEL
+    interface SearchTask {
+      pointIndex: number;
+      point: { lat: number; lng: number; distanceFromOriginM: number };
+      query: string;
+    }
+
+    const searchTasks: SearchTask[] = [];
     for (let i = 0; i < searchPoints.length; i++) {
-      const point = searchPoints[i];
-      this.logger.log(`[resolveStopsAlongCorridor] Searching from point ${i + 1}/${searchPoints.length}: (${point.lat.toFixed(4)}, ${point.lng.toFixed(4)})`);
-
-      // Search for each category from this point
       for (const query of queries) {
-        // Skip if we already have enough candidates for this category
-        if (candidates[query].length >= cfg.maxCandidatesPerCategory) {
-          continue;
-        }
+        searchTasks.push({ pointIndex: i, point: searchPoints[i], query });
+      }
+    }
 
+    this.logger.log(`[resolveStopsAlongCorridorLegacy] Launching ${searchTasks.length} parallel search tasks`);
+
+    const searchResults = await Promise.all(
+      searchTasks.map(async (task) => {
         try {
           const results = await this.placeSearch.searchPlaces(
-            query,
-            { lat: point.lat, lng: point.lng },
+            task.query,
+            { lat: task.point.lat, lng: task.point.lng },
             cfg.searchRadiusM,
             cfg.resultsPerSearch,
           );
-
-          // Add new unique results
-          for (const place of results) {
-            if (!seenByCategory[query].has(place.placeId)) {
-              seenByCategory[query].add(place.placeId);
-              candidates[query].push(place);
-
-              this.logger.log(`[resolveStopsAlongCorridor]   Found "${query}": "${place.name}" at (${place.location.lat.toFixed(4)}, ${place.location.lng.toFixed(4)})`);
-
-              // Stop adding if we hit the limit
-              if (candidates[query].length >= cfg.maxCandidatesPerCategory) {
-                break;
-              }
-            }
-          }
+          return { task, results };
         } catch (error) {
-          this.logger.warn(`[resolveStopsAlongCorridor]   Error searching for "${query}": ${error}`);
+          this.logger.warn(`[resolveStopsAlongCorridorLegacy] Error searching "${task.query}" from point ${task.pointIndex + 1}: ${error}`);
+          return { task, results: [] as PlaceCandidate[] };
         }
+      }),
+    );
+
+    // Merge results with deduplication (process in corridor-point order for consistency)
+    searchResults.sort((a, b) => a.task.pointIndex - b.task.pointIndex);
+
+    for (const { task, results } of searchResults) {
+      const query = task.query;
+
+      // Skip if we already have enough candidates for this category
+      if (candidates[query].length >= cfg.maxCandidatesPerCategory) {
+        continue;
+      }
+
+      for (const place of results) {
+        if (candidates[query].length >= cfg.maxCandidatesPerCategory) break;
+        if (seenByCategory[query].has(place.placeId)) continue;
+
+        // Name relevance check
+        if (!this.isNameRelevant(place.name, query)) continue;
+
+        // Location dedup: skip if another candidate is within 100m
+        const isDuplicate = candidates[query].some(
+          (existing) => this.haversineM(existing.location, place.location) < 100,
+        );
+        if (isDuplicate) continue;
+
+        seenByCategory[query].add(place.placeId);
+        candidates[query].push(place);
+
+        this.logger.log(`[resolveStopsAlongCorridorLegacy]   Found "${query}": "${place.name}" at (${place.location.lat.toFixed(4)}, ${place.location.lng.toFixed(4)})`);
       }
     }
 
     // Log summary
-    this.logger.log(`[resolveStopsAlongCorridor] ========== RESULTS ==========`);
+    this.logger.log(`[resolveStopsAlongCorridorLegacy] ========== RESULTS ==========`);
     for (const query of queries) {
-      this.logger.log(`[resolveStopsAlongCorridor] ${query}: ${candidates[query].length} candidates`);
+      this.logger.log(`[resolveStopsAlongCorridorLegacy] ${query}: ${candidates[query].length} candidates`);
     }
-    this.logger.log(`[resolveStopsAlongCorridor] ========== MULTI-CANDIDATE SEARCH END ==========`);
+    this.logger.log(`[resolveStopsAlongCorridorLegacy] ========== MULTI-CANDIDATE SEARCH END ==========`);
 
     return candidates;
   }
@@ -294,6 +454,22 @@ export class EntityResolverService {
     }
 
     return selected;
+  }
+
+  /**
+   * Check if a place name is relevant to the search query.
+   * "Ross Dress for Less" is relevant to "Ross"; "Town Center at Aurora" is not.
+   */
+  private isNameRelevant(placeName: string, query: string): boolean {
+    const name = placeName.toLowerCase();
+    const q = query.toLowerCase();
+
+    // Direct containment: "walmart supercenter" contains "walmart"
+    if (name.includes(q)) return true;
+
+    // Check each query word (skip short words like "of", "the")
+    const queryWords = q.split(/\s+/).filter((w) => w.length > 2);
+    return queryWords.some((word) => name.includes(word));
   }
 
   /**

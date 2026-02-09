@@ -6,13 +6,13 @@ module.exports = {
     slug: "agentic-mobile-map",
     version: "1.0.0",
     orientation: "portrait",
-    icon: "./assets/icon.png",
+    icon: "./assets/App_logo.png",
     scheme: "agentic-map",
     userInterfaceStyle: "automatic",
     splash: {
-      image: "./assets/splash.png",
+      image: "./assets/App_logo.png",
       resizeMode: "contain",
-      backgroundColor: "#1a1a2e",
+      backgroundColor: "#FAFBFD",
     },
     assetBundlePatterns: ["**/*"],
     ios: {
@@ -34,8 +34,8 @@ module.exports = {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: "./assets/adaptive-icon.png",
-        backgroundColor: "#1a1a2e",
+        foregroundImage: "./assets/App_logo.png",
+        backgroundColor: "#FAFBFD",
       },
       package: "com.agenticmap.mobile",
       config: {

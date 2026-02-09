@@ -62,6 +62,13 @@ export default function VoiceAssistantScreen(): JSX.Element {
   const [processingPhase, setProcessingPhase] = useState<'idle' | 'thinking' | 'optimizing'>('idle');
   const [streamingMessage, setStreamingMessage] = useState<string>('');
   const lastAgentMessageRef = useRef<string>('');
+  const streamingMessageRef = useRef<string>('');
+
+  // Planning animation lifecycle: keep visible until animation completes
+  const [showPlanningUI, setShowPlanningUI] = useState(false);
+  const [snapshotPlanningData, setSnapshotPlanningData] = useState<typeof planningData>(null);
+  const planningAnimDoneRef = useRef(false);
+  const planningBackendDoneRef = useRef(false);
 
   const appendSystem = useCallback((text: string) => {
     setMessages((prev) => [
@@ -84,21 +91,50 @@ export default function VoiceAssistantScreen(): JSX.Element {
     resetNavigateGuard,
   } = useNavigateWithStops({ onSystemMessage: appendSystem });
 
+  // Planning animation lifecycle: show until both backend + animation finish
+  useEffect(() => {
+    if (isPlanning && planningData) {
+      setShowPlanningUI(true);
+      setSnapshotPlanningData(planningData);
+      planningAnimDoneRef.current = false;
+      planningBackendDoneRef.current = false;
+    } else if (!isPlanning && showPlanningUI) {
+      planningBackendDoneRef.current = true;
+      if (planningAnimDoneRef.current) {
+        setShowPlanningUI(false);
+        setSnapshotPlanningData(null);
+      }
+    }
+  }, [isPlanning, planningData, showPlanningUI]);
+
+  const handlePlanningComplete = useCallback(() => {
+    planningAnimDoneRef.current = true;
+    if (planningBackendDoneRef.current) {
+      setShowPlanningUI(false);
+      setSnapshotPlanningData(null);
+    }
+  }, []);
+
   // Handle ElevenLabs agent messages - stream with typewriter effect
   useEffect(() => {
     if (voiceBackend === 'elevenlabs' && agentMessage && agentMessage !== lastAgentMessageRef.current) {
       lastAgentMessageRef.current = agentMessage;
-      // Set streaming message - will be displayed with typewriter effect
+      // Commit any in-flight streaming message before starting new one
+      if (streamingMessageRef.current) {
+        appendSystem(streamingMessageRef.current);
+      }
+      streamingMessageRef.current = agentMessage;
       setStreamingMessage(agentMessage);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  }, [agentMessage, voiceBackend]);
+  }, [agentMessage, voiceBackend, appendSystem]);
 
   // When streaming completes, move to regular messages
   const handleStreamComplete = useCallback(() => {
     if (streamingMessage) {
       appendSystem(streamingMessage);
       setStreamingMessage('');
+      streamingMessageRef.current = '';
     }
   }, [streamingMessage, appendSystem]);
 
@@ -250,24 +286,28 @@ export default function VoiceAssistantScreen(): JSX.Element {
             <StreamingChatBubble
               text={streamingMessage}
               index={messages.length + 1}
-              charsPerSecond={60}
+              charsPerSecond={120}
               onComplete={handleStreamComplete}
             />
           )}
 
           {/* Processing indicators */}
-          {showPlanningIndicator && planningData && (
+          {voiceBackend === 'elevenlabs' && showPlanningUI && snapshotPlanningData && (
             <View style={styles.planningFlowWrap}>
               <RoutePlanningFlow
                 entities={{
-                  destination: planningData.destination ?? undefined,
-                  stops: planningData.stops,
+                  destination: snapshotPlanningData.destination ?? undefined,
+                  stops: snapshotPlanningData.stops,
                 }}
                 colors={colors}
+                onComplete={handlePlanningComplete}
               />
             </View>
           )}
-          {showPlanningIndicator && !planningData && (
+          {voiceBackend === 'elevenlabs' && isPlanning && !showPlanningUI && (
+            <ProcessingIndicator message="Planning your route..." />
+          )}
+          {voiceBackend !== 'elevenlabs' && showPlanningIndicator && (
             <ProcessingIndicator message="Planning your route..." />
           )}
           {showThinkingIndicator && (

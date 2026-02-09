@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { View, Text, AppState, LogBox, type AppStateStatus } from 'react-native';
 
 // Suppress known warnings from third-party libraries
@@ -50,10 +50,8 @@ function shouldDehydrateQuery(query: { queryKey: readonly unknown[] }): boolean 
   return false;
 }
 
-// Prevent the splash screen from auto-hiding
-SplashScreen.preventAutoHideAsync().catch(() => {
-  // Ignore errors - splash screen might already be hidden
-});
+// Hide native splash immediately — our animated splash.tsx handles the brand reveal
+SplashScreen.hideAsync().catch(() => {});
 
 export default function RootLayout(): JSX.Element {
   const [fontsLoaded, fontError] = useFonts({
@@ -64,15 +62,8 @@ export default function RootLayout(): JSX.Element {
     'DMSans-Bold': DMSans_700Bold,
   });
 
-  const onLayoutRootView = useCallback(async () => {
-    if (fontsLoaded || fontError) {
-      await SplashScreen.hideAsync().catch(() => {});
-    }
-  }, [fontsLoaded, fontError]);
-
-  useEffect(() => {
-    onLayoutRootView();
-  }, [onLayoutRootView]);
+  // Native splash is hidden immediately at module level above.
+  // Fonts load in background while our animated splash.tsx plays.
 
   useEffect(() => {
     const unsubNet = NetInfo.addEventListener((state) => {
@@ -90,9 +81,7 @@ export default function RootLayout(): JSX.Element {
   // Show loading state instead of returning null
   if (!fontsLoaded && !fontError) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
-        <Text>Loading...</Text>
-      </View>
+      <View style={{ flex: 1, backgroundColor: '#FAFBFD' }} />
     );
   }
 
@@ -122,9 +111,7 @@ export default function RootLayout(): JSX.Element {
           <Provider store={store}>
             <PersistGate
               loading={
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
-                  <Text style={{ color: '#1A2332' }}>Loading...</Text>
-                </View>
+                <View style={{ flex: 1, backgroundColor: '#FAFBFD' }} />
               }
               persistor={persistor}
               onBeforeLift={async () => {
