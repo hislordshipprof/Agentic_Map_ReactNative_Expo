@@ -12,13 +12,6 @@ export {
   type ConfirmationEntities,
 } from './ConfirmationDialog';
 
-// Disambiguation Dialog (multiple place options)
-export {
-  DisambiguationDialog,
-  type DisambiguationDialogProps,
-  type PlaceCandidate,
-} from './DisambiguationDialog';
-
 // Alternatives Dialog (LOW confidence < 0.60)
 export {
   AlternativesDialog,

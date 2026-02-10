@@ -33,6 +33,11 @@ node_modules/
 *.mobileprovision
 *.keystore
 
+# Google Cloud Service Account Credentials
+gen-lang-client-*.json
+*-credentials.json
+service-account*.json
+
 # Expo
 .expo/
 dist/
@@ -68,6 +73,9 @@ Thumbs.db
 *.sublime-workspace
 .history/
 
+# Claude Code
+.claude/
+
 # TypeScript
 *.tsbuildinfo
 .tsbuildinfo
@@ -75,6 +83,10 @@ Thumbs.db
 # Logs
 logs/
 *.log
+backenderror.md
+backendlogText.md
+frontendlog.md
+nul
 
 # Temporary files
 tmp/

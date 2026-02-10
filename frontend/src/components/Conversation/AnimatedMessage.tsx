@@ -1,16 +1,19 @@
 /**
  * AnimatedMessage Component - Agentic Mobile Map
- * 
+ *
  * Animated message bubble for conversation UI with smooth entrance animations.
  * Per requirements-frontend.md Phase 1.1:
  * - User messages on right (blue)
  * - System messages on left (gray)
  * - Auto-scroll, timestamps optional
- * 
+ *
  * Uses react-native-reanimated for 60 FPS performance.
+ *
+ * Supports an optional `colors` prop (ThemePalette) for theme-aware rendering.
+ * When omitted, falls back to the legacy dark-theme constants (backward compat).
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -21,6 +24,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { Colors, TextStyles, Spacing, Layout, SpringConfig } from '@/theme';
+import type { ThemePalette } from '@/theme/palettes';
 
 /**
  * Message type definition
@@ -45,20 +49,23 @@ export interface AnimatedMessageProps {
   showTimestamp?: boolean;
   /** Custom styles */
   style?: ViewStyle;
+  /** Theme palette — when provided, renders theme-aware colors */
+  colors?: ThemePalette;
 }
 
 /**
  * AnimatedMessage Component
- * 
+ *
  * Renders a message bubble with entrance animation.
- * - User messages: Blue bubble, aligned right, slide from right
- * - System messages: Gray bubble, aligned left, slide from left
+ * - User messages: Dark navy bubble, aligned right, slide from right
+ * - System messages: Light gray bubble, aligned left, slide from left
  */
 export const AnimatedMessage: React.FC<AnimatedMessageProps> = ({
   message,
   index = 0,
   showTimestamp = false,
   style,
+  colors,
 }) => {
   const { sender, text, timestamp } = message;
   const isUser = sender === 'user';
@@ -70,7 +77,7 @@ export const AnimatedMessage: React.FC<AnimatedMessageProps> = ({
 
   // Entrance animation on mount
   useEffect(() => {
-    const staggerDelay = index * 30; // Stagger by 30ms
+    const staggerDelay = index * 30;
 
     opacity.value = withDelay(
       staggerDelay,
@@ -105,6 +112,33 @@ export const AnimatedMessage: React.FC<AnimatedMessageProps> = ({
     return `${hours}:${minutes}`;
   };
 
+  // Derive dynamic styles from theme palette (or fall back to dark defaults)
+  const dynamicStyles = useMemo(() => {
+    if (!colors) {
+      // Legacy fallback: hardcoded dark-theme colors
+      return {
+        userBubbleBg: Colors.primary.teal,
+        systemBubbleBg: Colors.effects.glassDark,
+        systemBorderColor: Colors.effects.glassDarkBorder,
+        userTextColor: Colors.dark.text.primary,
+        systemTextColor: Colors.dark.text.primary,
+        userTimestampColor: Colors.dark.text.primary,
+        systemTimestampColor: Colors.dark.text.tertiary,
+        shadowColor: Colors.effects.shadowDeep,
+      };
+    }
+    return {
+      userBubbleBg: colors.message.user,
+      systemBubbleBg: colors.message.system,
+      systemBorderColor: colors.message.systemBorder,
+      userTextColor: colors.message.userText,
+      systemTextColor: colors.message.systemText,
+      userTimestampColor: colors.message.userText,
+      systemTimestampColor: colors.text.tertiary,
+      shadowColor: colors.effects.shadow,
+    };
+  }, [colors]);
+
   return (
     <Animated.View
       style={[
@@ -117,13 +151,29 @@ export const AnimatedMessage: React.FC<AnimatedMessageProps> = ({
       <View
         style={[
           styles.bubble,
-          isUser ? styles.userBubble : styles.systemBubble,
+          {
+            shadowColor: dynamicStyles.shadowColor,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: Layout.elevationMedium,
+          },
+          isUser
+            ? [styles.userBubbleShape, { backgroundColor: dynamicStyles.userBubbleBg }]
+            : [
+                styles.systemBubbleShape,
+                {
+                  backgroundColor: dynamicStyles.systemBubbleBg,
+                  borderWidth: 1,
+                  borderColor: dynamicStyles.systemBorderColor,
+                },
+              ],
         ]}
       >
         <Text
           style={[
             styles.text,
-            isUser ? styles.userText : styles.systemText,
+            { color: isUser ? dynamicStyles.userTextColor : dynamicStyles.systemTextColor },
           ]}
         >
           {text}
@@ -133,7 +183,13 @@ export const AnimatedMessage: React.FC<AnimatedMessageProps> = ({
           <Text
             style={[
               styles.timestamp,
-              isUser ? styles.userTimestamp : styles.systemTimestamp,
+              {
+                color: isUser
+                  ? dynamicStyles.userTimestampColor
+                  : dynamicStyles.systemTimestampColor,
+                opacity: isUser ? 0.7 : 1,
+                textAlign: isUser ? 'right' : 'left',
+              },
             ]}
           >
             {formatTime(timestamp)}
@@ -145,18 +201,7 @@ export const AnimatedMessage: React.FC<AnimatedMessageProps> = ({
 };
 
 /**
- * Shadow style (defined separately to avoid circular reference)
- */
-const shadowStyle = {
-  shadowColor: Colors.effects.shadowDeep,
-  shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.3,
-  shadowRadius: 8,
-  elevation: Layout.elevationMedium,
-};
-
-/**
- * Styles - Dark theme with teal accents
+ * Styles
  */
 const styles = StyleSheet.create({
   container: {
@@ -175,41 +220,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
     borderRadius: Layout.radiusLarge,
-    ...shadowStyle,
   },
-  userBubble: {
-    // Teal gradient for user messages
-    backgroundColor: Colors.primary.teal,
+  userBubbleShape: {
     borderBottomRightRadius: Spacing.xs,
   },
-  systemBubble: {
-    // Dark glassmorphism for system messages
-    backgroundColor: Colors.effects.glassDark,
-    borderWidth: 1,
-    borderColor: Colors.effects.glassDarkBorder,
+  systemBubbleShape: {
     borderBottomLeftRadius: Spacing.xs,
   },
   text: {
     ...TextStyles.messageBubble,
   },
-  userText: {
-    color: Colors.dark.text.primary,
-  },
-  systemText: {
-    color: Colors.dark.text.primary,
-  },
   timestamp: {
     ...TextStyles.timestamp,
     marginTop: Spacing.xs,
-  },
-  userTimestamp: {
-    color: Colors.dark.text.primary,
-    opacity: 0.7,
-    textAlign: 'right',
-  },
-  systemTimestamp: {
-    color: Colors.dark.text.tertiary,
-    textAlign: 'left',
   },
 });
 

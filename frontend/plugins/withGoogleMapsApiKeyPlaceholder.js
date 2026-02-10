@@ -50,10 +50,24 @@ function withGoogleMapsApiKeyPlaceholder(config) {
       );
     }
     if (!g.includes("manifestPlaceholders")) {
-      g = g.replace(
-        /(buildConfigField\("boolean", "REACT_NATIVE_UNSTABLE_USE_RUNTIME_SCHEDULER_ALWAYS", .+?\.toString\(\)\))\r?\n(\s+\})/,
-        `$1\n${MANIFEST_PLACEHOLDERS_LINE}$2`
-      );
+      // Try to find defaultConfig block and add manifestPlaceholders before the closing brace
+      // Match: versionName "..." followed by closing brace
+      const defaultConfigPattern = /(versionName\s+["'][^"']+["'])\r?\n(\s+)(\})/;
+      if (defaultConfigPattern.test(g)) {
+        g = g.replace(
+          defaultConfigPattern,
+          `$1\n$2${MANIFEST_PLACEHOLDERS_LINE.trim()}\n$2$3`
+        );
+      } else {
+        // Fallback: try to find any closing brace in defaultConfig
+        const fallbackPattern = /(defaultConfig\s*\{[^}]*)(\s+)(\})/s;
+        if (fallbackPattern.test(g)) {
+          g = g.replace(
+            fallbackPattern,
+            `$1$2${MANIFEST_PLACEHOLDERS_LINE.trim()}\n$2$3`
+          );
+        }
+      }
     }
     cfg.modResults = g;
     return cfg;

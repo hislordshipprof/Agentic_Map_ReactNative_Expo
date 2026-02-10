@@ -6,7 +6,7 @@
  */
 
 import { Entities, Intent, NLUResponse } from './nlu';
-import { Route, RouteStop, LatLng } from './route';
+import { Route, RouteStop, LatLng, RouteOption } from './route';
 import { Anchor, UserPreferences } from './user';
 
 /**
@@ -32,7 +32,9 @@ export interface ApiError {
   status?: number;
   details?: Record<string, unknown>;
   suggestion?: string;
-  suggestions?: string[];
+  suggestions?: string[] | Array<{ placeId: string; name: string; description: string }>;
+  /** Original query that failed (for DESTINATION_NOT_FOUND_SUGGESTIONS) */
+  originalQuery?: string;
 }
 
 /**
@@ -49,6 +51,7 @@ export const ApiErrorCode = {
   ROUTE_EXCEEDS_BUDGET: 'ROUTE_EXCEEDS_BUDGET',
   AMBIGUOUS_DESTINATION: 'AMBIGUOUS_DESTINATION',
   LOCATION_UNAVAILABLE: 'LOCATION_UNAVAILABLE',
+  DESTINATION_NOT_FOUND_SUGGESTIONS: 'DESTINATION_NOT_FOUND_SUGGESTIONS',
   SERVER_ERROR: 'SERVER_ERROR',
 } as const;
 
@@ -72,6 +75,8 @@ export interface ProcessUtteranceRequest {
     previousEntities?: Entities;
     conversationId?: string;
   };
+  /** Conversation history for multi-turn NLU */
+  conversationHistory?: Array<{ role: string; content: string }>;
 }
 
 export type ProcessUtteranceResponse = ApiResponse<NLUResponse>;
@@ -131,24 +136,53 @@ export interface NavigateWithStopsRequest {
   origin: LatLng;
   destination: {
     name: string;
+    /** Place ID from "Did you mean?" suggestion selection */
+    placeId?: string;
     location?: LatLng;
   };
   stops: Array<{
     name: string;
     category?: string;
   }>;
+  /** User's saved locations (home, work) for resolving anchor references */
+  anchors?: Array<{ name: string; location: LatLng }>;
   preferences?: Partial<UserPreferences>;
 }
 
 export interface NavigateWithStopsData {
   route: Route;
   alternatives?: Route[];
+  /** Route options for multi-route selection (cluster-based) */
+  routeOptions?: RouteOption[];
   /** Stops that couldn't fit in budget */
   excludedStops?: Array<{
     name: string;
     reason: string;
     nearestMatch?: RouteStop;
   }>;
+  /** Destination info */
+  destination?: {
+    name: string;
+    location: LatLng;
+  };
+  /** Direct time without stops */
+  directTimeMin?: number;
+  /** Warnings about detours */
+  warnings?: Array<{
+    stopName: string;
+    message: string;
+    detourMinutes: number;
+    category: string;
+  }>;
+  /** Stop name corrections from autocomplete (e.g. "chik fila" → "Chick-fil-A") */
+  corrections?: Array<{ original: string; corrected: string }>;
+}
+
+/** Structured suggestion from "Did you mean?" autocomplete fallback */
+export interface DestinationSuggestion {
+  placeId: string;
+  name: string;
+  description: string;
 }
 
 export type NavigateWithStopsResponse = ApiResponse<NavigateWithStopsData>;

@@ -81,6 +81,8 @@ export interface Entities {
  * NLU response from backend
  */
 export interface NLUResponse {
+  /** Response type: action (structured) or conversation (text reply) */
+  type?: 'action' | 'conversation';
   /** Detected intent */
   intent: Intent;
   /** Confidence score (0-1) */
@@ -93,6 +95,10 @@ export interface NLUResponse {
   utterance: string;
   /** Processing time in ms */
   processingTime: number;
+  /** Conversational message from Gemini (when type='conversation') */
+  message?: string;
+  /** Info still needed from user (when type='conversation') */
+  missingInfo?: string[];
 }
 
 /**

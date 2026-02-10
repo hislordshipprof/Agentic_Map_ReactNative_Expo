@@ -1,6 +1,6 @@
 /** Map with polyline, markers (start/stops/end), zoom controls. Uses react-native-maps. */
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,8 +21,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { decodePolyline, getBoundsFromWaypoints, getRegionForBounds } from '@/services/maps';
-import { Colors, Spacing, FontFamily, FontSize, ColorUtils } from '@/theme';
+import { Spacing, FontFamily, FontSize } from '@/theme';
 import { SpringConfig } from '@/theme/animations';
+import { useThemeColors } from '@/theme/useThemeColors';
 import type { Route, RouteStop, LatLng } from '@/types/route';
 
 const toMapLatLng = (p: LatLng) => ({ latitude: p.lat, longitude: p.lng });
@@ -36,8 +37,16 @@ const DEFAULT_REGION = {
 
 export interface RouteMapProps {
   route?: Route;
+  stops?: RouteStop[];
+  /** Fixed height (ignored when fillScreen is true) */
   height?: number;
+  /** Fill the parent container; removes border radius and fixed height */
+  fillScreen?: boolean;
+  /** Edge padding for fitToCoordinates (accounts for overlapping UI like bottom sheet) */
+  fitPadding?: { top: number; right: number; bottom: number; left: number };
   showControls?: boolean;
+  showUserLocation?: boolean;
+  showOptimization?: boolean;
   interactive?: boolean;
   onStopPress?: (stopId: string) => void;
   onMapPress?: (location: LatLng) => void;
@@ -48,80 +57,53 @@ const MapControlButton: React.FC<{
   icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
 }> = ({ icon, onPress }) => {
+  const colors = useThemeColors();
   const scale = useSharedValue(1);
   const handlePressIn = () => { scale.value = withSpring(0.9, SpringConfig.snappy); };
   const handlePressOut = () => { scale.value = withSpring(1, SpringConfig.snappy); };
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   return (
     <Animated.View style={animatedStyle}>
-      <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut} style={styles.controlButton}>
-        <Ionicons name={icon} size={20} color={Colors.dark.text.primary} />
+      <Pressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={[styles.controlButton, { backgroundColor: colors.surface.elevated, borderColor: colors.border.light }]}
+      >
+        <Ionicons name={icon} size={20} color={colors.text.primary} />
       </Pressable>
     </Animated.View>
   );
 };
 
-/** Web fallback when react-native-maps is not available. */
-const RouteMapPlaceholder: React.FC<{
-  route?: Route;
-  height: number;
-  showControls: boolean;
-  onStopPress?: (stopId: string) => void;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onRecenter: () => void;
-  style?: ViewStyle;
-}> = ({ route, height, showControls, onStopPress, onZoomIn, onZoomOut, onRecenter, style }) => {
-  return (
-    <Animated.View entering={FadeIn.duration(400)} style={[styles.container, { height }, style]}>
-      <LinearGradient colors={['#1a2733', '#0f1c24', '#0a1419']} style={StyleSheet.absoluteFill}>
-        {route && <View style={styles.routeLine}><LinearGradient colors={[Colors.primary.tealLight, Colors.primary.teal]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} /></View>}
-        {route?.origin && <View style={[styles.endpointMarker, styles.originMarker]}><Ionicons name="radio-button-on" size={16} color={Colors.map.start} /></View>}
-        {route?.stops.map((s, i) => (
-          <Pressable key={s.id} onPress={() => onStopPress?.(s.id)} style={[styles.marker, { left: `${20 + (i * 47) % 60}%`, top: `${25 + (i * 31) % 50}%` }]}>
-            <View style={styles.markerInner}><Text style={styles.markerNumber}>{i + 1}</Text></View>
-          </Pressable>
-        ))}
-        {route?.destination && <View style={[styles.endpointMarker, styles.destinationMarker]}><Ionicons name="flag" size={16} color={Colors.map.destination} /></View>}
-      </LinearGradient>
-      {showControls && (
-        <View style={styles.controlsContainer}>
-          <MapControlButton icon="add" onPress={onZoomIn} />
-          <MapControlButton icon="remove" onPress={onZoomOut} />
-          <View style={styles.controlSpacer} />
-          <MapControlButton icon="locate" onPress={onRecenter} />
-        </View>
-      )}
-      {!route && (
-        <Animated.View entering={FadeIn.duration(300)} style={styles.noRouteOverlay}>
-          <View style={styles.noRouteContent}>
-            <Ionicons name="map-outline" size={48} color={Colors.dark.text.tertiary} />
-            <Text style={styles.noRouteText}>No route to display</Text>
-            <Text style={styles.noRouteSubtext}>Plan a route to see it on the map</Text>
-          </View>
-        </Animated.View>
-      )}
-    </Animated.View>
-  );
-};
+const DEFAULT_FIT_PADDING = { top: 60, right: 60, bottom: 60, left: 60 };
 
 export const RouteMap: React.FC<RouteMapProps> = ({
   route,
+  stops,
   height = 300,
+  fillScreen = false,
+  fitPadding,
   showControls = true,
+  showUserLocation = false,
+  showOptimization = false,
   onStopPress,
   onMapPress,
   style,
 }) => {
+  const colors = useThemeColors();
   const mapRef = useRef<MapView>(null);
+
+  // Use provided stops or fall back to route.stops
+  const routeStops = stops ?? route?.stops ?? [];
 
   const waypoints = useMemo(() => {
     if (!route) return [];
     const pts: LatLng[] = [route.origin.location];
-    route.stops.forEach((s) => pts.push(s.location));
+    routeStops.forEach((s) => pts.push(s.location));
     pts.push(route.destination.location);
     return pts;
-  }, [route]);
+  }, [route, routeStops]);
 
   const allCoords = useMemo(() => waypoints.map(toMapLatLng), [waypoints]);
 
@@ -137,9 +119,23 @@ export const RouteMap: React.FC<RouteMapProps> = ({
     return decodePolyline(route.polyline).map(toMapLatLng);
   }, [route?.polyline]);
 
+  const edgePadding = fitPadding ?? DEFAULT_FIT_PADDING;
+
+  const handleMapReady = useCallback(() => {
+    if (allCoords.length > 1) {
+      // Small delay to ensure map is fully laid out
+      setTimeout(() => {
+        mapRef.current?.fitToCoordinates(allCoords, {
+          edgePadding,
+          animated: true,
+        });
+      }, 200);
+    }
+  }, [allCoords, edgePadding]);
+
   const handleRecenter = () => {
     if (allCoords.length > 0) {
-      mapRef.current?.fitToCoordinates(allCoords, { edgePadding: { top: 60, right: 60, bottom: 60, left: 60 }, animated: true });
+      mapRef.current?.fitToCoordinates(allCoords, { edgePadding, animated: true });
     }
   };
 
@@ -157,46 +153,73 @@ export const RouteMap: React.FC<RouteMapProps> = ({
     }
   };
 
+  const containerStyle = fillScreen
+    ? [styles.containerFull, style]
+    : [styles.container, { height, backgroundColor: colors.background.secondary }, style];
+
+  // Web placeholder fallback
   if (Platform.OS === 'web') {
     return (
-      <RouteMapPlaceholder
-        route={route}
-        height={height}
-        showControls={showControls}
-        onStopPress={onStopPress}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onRecenter={handleRecenter}
-        style={style}
-      />
+      <Animated.View entering={FadeIn.duration(400)} style={containerStyle}>
+        <LinearGradient colors={['#F8FAFB', '#F1F5F9', '#E8FBF3']} style={StyleSheet.absoluteFill}>
+          {route && (
+            <View style={[styles.routeLine, { backgroundColor: colors.map.polyline }]} />
+          )}
+        </LinearGradient>
+        {showControls && (
+          <View style={styles.controlsContainer}>
+            <MapControlButton icon="add" onPress={handleZoomIn} />
+            <MapControlButton icon="remove" onPress={handleZoomOut} />
+            <View style={styles.controlSpacer} />
+            <MapControlButton icon="locate" onPress={handleRecenter} />
+          </View>
+        )}
+        {!route && (
+          <Animated.View entering={FadeIn.duration(300)} style={[styles.noRouteOverlay, { backgroundColor: `${colors.background.primary}CC` }]}>
+            <View style={styles.noRouteContent}>
+              <Ionicons name="map-outline" size={48} color={colors.text.tertiary} />
+              <Text style={[styles.noRouteText, { color: colors.text.secondary }]}>No route to display</Text>
+              <Text style={[styles.noRouteSubtext, { color: colors.text.tertiary }]}>Plan a route to see it on the map</Text>
+            </View>
+          </Animated.View>
+        )}
+      </Animated.View>
     );
   }
 
   return (
-    <Animated.View entering={FadeIn.duration(400)} style={[styles.container, { height }, style]}>
+    <Animated.View entering={FadeIn.duration(400)} style={containerStyle}>
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFill}
         initialRegion={initialRegion}
+        showsUserLocation={showUserLocation}
+        onMapReady={handleMapReady}
         onPress={onMapPress ? (e) => onMapPress({ lat: e.nativeEvent.coordinate.latitude, lng: e.nativeEvent.coordinate.longitude }) : undefined}
       >
         {polylineCoords.length > 0 && (
-          <Polyline coordinates={polylineCoords} strokeColor={Colors.map.polyline} strokeWidth={4} />
+          <Polyline
+            coordinates={polylineCoords}
+            strokeColor={colors.map.polyline}
+            strokeWidth={5}
+            lineCap="round"
+            lineJoin="round"
+          />
         )}
-        {route?.origin && (
+        {route?.origin && !showUserLocation && (
           <Marker
             coordinate={toMapLatLng(route.origin.location)}
             title={route.origin.name}
-            pinColor={Colors.map.start}
+            pinColor={colors.map.start}
           />
         )}
-        {route?.stops.map((stop: RouteStop, index: number) => (
+        {routeStops.map((stop: RouteStop, index: number) => (
           <Marker
             key={stop.id}
             coordinate={toMapLatLng(stop.location)}
             title={`${index + 1}. ${stop.name}`}
-            pinColor={Colors.map.stop}
+            pinColor={colors.map.stop}
             onPress={() => onStopPress?.(stop.id)}
           />
         ))}
@@ -204,7 +227,7 @@ export const RouteMap: React.FC<RouteMapProps> = ({
           <Marker
             coordinate={toMapLatLng(route.destination.location)}
             title={route.destination.name}
-            pinColor={Colors.map.destination}
+            pinColor={colors.map.destination}
           />
         )}
       </MapView>
@@ -219,26 +242,26 @@ export const RouteMap: React.FC<RouteMapProps> = ({
       )}
 
       {!route && (
-        <Animated.View entering={FadeIn.duration(300)} style={styles.noRouteOverlay}>
+        <Animated.View entering={FadeIn.duration(300)} style={[styles.noRouteOverlay, { backgroundColor: `${colors.background.primary}CC` }]}>
           <View style={styles.noRouteContent}>
-            <Ionicons name="map-outline" size={48} color={Colors.dark.text.tertiary} />
-            <Text style={styles.noRouteText}>No route to display</Text>
-            <Text style={styles.noRouteSubtext}>Plan a route to see it on the map</Text>
+            <Ionicons name="map-outline" size={48} color={colors.text.tertiary} />
+            <Text style={[styles.noRouteText, { color: colors.text.secondary }]}>No route to display</Text>
+            <Text style={[styles.noRouteSubtext, { color: colors.text.tertiary }]}>Plan a route to see it on the map</Text>
           </View>
         </Animated.View>
       )}
 
       {Constants.appOwnership === 'expo' && (
-        <View style={styles.expoGoBanner}>
-          <Ionicons name="information-circle" size={16} color={Colors.primary.teal} />
-          <Text style={styles.expoGoBannerText}>
+        <View style={[styles.expoGoBanner, { backgroundColor: `${colors.background.primary}EE`, borderColor: `${colors.primary.teal}66` }]}>
+          <Ionicons name="information-circle" size={16} color={colors.primary.teal} />
+          <Text style={[styles.expoGoBannerText, { color: colors.text.secondary }]}>
             Map tiles need a dev build. Run: npx expo prebuild && npx expo run:android
           </Text>
         </View>
       )}
 
-      <View style={styles.attribution}>
-        <Text style={styles.attributionText}>Google Maps</Text>
+      <View style={[styles.attribution, { backgroundColor: `${colors.surface.elevated}E6` }]}>
+        <Text style={[styles.attributionText, { color: colors.text.tertiary }]}>Google Maps</Text>
       </View>
     </Animated.View>
   );
@@ -248,52 +271,20 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: Colors.dark.background,
+  },
+  containerFull: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
   },
   routeLine: {
     position: 'absolute',
     left: '15%',
-    top: '30%',
+    top: '40%',
     width: '70%',
     height: 4,
     borderRadius: 2,
-    transform: [{ rotate: '15deg' }],
-    overflow: 'hidden',
+    transform: [{ rotate: '10deg' }],
   },
-  marker: {
-    position: 'absolute',
-    alignItems: 'center',
-    transform: [{ translateX: -16 }, { translateY: -32 }],
-  },
-  markerInner: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.map.stop,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: Colors.dark.background,
-  },
-  markerNumber: {
-    fontFamily: FontFamily.primary,
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-    color: Colors.dark.text.primary,
-  },
-  endpointMarker: {
-    position: 'absolute',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.effects.glassDark,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: Colors.effects.glassDarkBorder,
-  },
-  originMarker: { left: '10%', top: '25%' },
-  destinationMarker: { right: '10%', bottom: '25%' },
   controlsContainer: {
     position: 'absolute',
     right: Spacing.md,
@@ -304,16 +295,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: Colors.effects.glassDark,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: Colors.effects.glassDarkBorder,
   },
   controlSpacer: { height: Spacing.sm },
   noRouteOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: ColorUtils.withAlpha(Colors.dark.background, 0.8),
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -322,13 +310,11 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.primary,
     fontSize: FontSize.lg,
     fontWeight: '600',
-    color: Colors.dark.text.secondary,
     marginTop: Spacing.md,
   },
   noRouteSubtext: {
     fontFamily: FontFamily.primary,
     fontSize: FontSize.sm,
-    color: Colors.dark.text.tertiary,
     marginTop: Spacing.xs,
     textAlign: 'center',
   },
@@ -343,21 +329,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: Spacing.sm,
     borderRadius: 8,
-    backgroundColor: ColorUtils.withAlpha(Colors.dark.background, 0.92),
     borderWidth: 1,
-    borderColor: ColorUtils.withAlpha(Colors.primary.teal, 0.4),
   },
   expoGoBannerText: {
     flex: 1,
     fontFamily: FontFamily.primary,
     fontSize: 11,
-    color: Colors.dark.text.secondary,
   },
   attribution: {
     position: 'absolute',
     right: Spacing.md,
     bottom: Spacing.md,
-    backgroundColor: Colors.effects.glassDark,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: 6,
@@ -365,7 +347,6 @@ const styles = StyleSheet.create({
   attributionText: {
     fontFamily: FontFamily.primary,
     fontSize: 10,
-    color: Colors.dark.text.tertiary,
   },
 });
 

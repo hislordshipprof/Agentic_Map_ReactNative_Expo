@@ -33,8 +33,10 @@ export interface RouteStop {
   location: LatLng;
   /** Distance from route start in miles */
   mileMarker: number;
-  /** Extra distance required for this stop */
+  /** Extra distance required for this stop (meters) */
   detourCost: number;
+  /** Extra time required for this stop (minutes) */
+  detourCostMin?: number;
   /** Detour status classification */
   status: DetourStatus;
   /** Place category (coffee, gas, grocery, etc.) */
@@ -134,6 +136,36 @@ export interface RouteState {
 }
 
 /**
+ * Route option for multi-route selection
+ * Represents a cluster-based route alternative
+ */
+export interface RouteOption {
+  /** Unique option identifier */
+  id: string;
+  /** Display label (e.g., "Route 1", "Route 2") */
+  label: string;
+  /** Whether this is the recommended option */
+  isRecommended: boolean;
+  /** Total travel time in minutes */
+  totalTimeMin: number;
+  /** Total distance in miles */
+  totalDistanceMi: number;
+  /** Extra time compared to best option */
+  extraTimeMin: number;
+  /** How tightly clustered the stops are (km) */
+  clusterRadiusKm: number;
+  /** Stops in this route option */
+  stops: Array<{
+    name: string;
+    address?: string;
+    location: LatLng;
+    placeId: string;
+  }>;
+  /** Full route data */
+  route: Route;
+}
+
+/**
  * Initial route state
  */
 export const initialRouteState: RouteState = {
@@ -167,7 +199,11 @@ export const getDetourStatus = (
 /**
  * Helper to format distance for display
  */
-export const formatDistance = (miles: number): string => {
+export const formatDistance = (miles: number | undefined | null): string => {
+  // Handle undefined, null, NaN
+  if (miles === undefined || miles === null || isNaN(miles)) {
+    return '0 mi';
+  }
   if (miles < 0.1) {
     const feet = Math.round(miles * 5280);
     return `${feet} ft`;
@@ -178,7 +214,11 @@ export const formatDistance = (miles: number): string => {
 /**
  * Helper to format duration for display
  */
-export const formatDuration = (minutes: number): string => {
+export const formatDuration = (minutes: number | undefined | null): string => {
+  // Handle undefined, null, NaN
+  if (minutes === undefined || minutes === null || isNaN(minutes)) {
+    return '0 min';
+  }
   if (minutes < 60) {
     return `${Math.round(minutes)} min`;
   }

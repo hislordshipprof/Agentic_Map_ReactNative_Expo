@@ -92,10 +92,9 @@ class CacheServiceImpl {
       // Run cleanup on init
       await this.cleanup();
       this.isInitialized = true;
-      console.log('[CacheService] Initialized successfully');
-    } catch (error) {
-      console.error('[CacheService] Initialization failed:', error);
-      this.isInitialized = true; // Continue anyway
+    } catch {
+      // Initialization failed but continue anyway
+      this.isInitialized = true;
     }
   }
 
@@ -373,10 +372,8 @@ class CacheServiceImpl {
           // Skip invalid entries
         }
       }
-
-      console.log('[CacheService] Cleanup completed');
-    } catch (error) {
-      console.error('[CacheService] Cleanup failed:', error);
+    } catch {
+      // Cleanup failed - non-critical
     }
   }
 
@@ -388,9 +385,8 @@ class CacheServiceImpl {
       const keys = await AsyncStorage.getAllKeys();
       const cacheKeys = keys.filter((k) => k.startsWith('@cache/'));
       await AsyncStorage.multiRemove(cacheKeys);
-      console.log('[CacheService] All cache cleared');
-    } catch (error) {
-      console.error('[CacheService] Clear failed:', error);
+    } catch {
+      // Clear failed - non-critical
     }
   }
 

@@ -18,9 +18,9 @@ import { Colors, FontFamily, FontSize, Spacing } from '@/theme';
 
 const NODES: { icon: keyof typeof Ionicons.glyphMap; color: string; label?: string }[] = [
   { icon: 'locate', color: Colors.primary.blue, label: undefined },
-  { icon: 'cafe-outline', color: Colors.semantic.success, label: 'Starbucks' },
-  { icon: 'cart-outline', color: Colors.semantic.warning, label: 'Walmart' },
-  { icon: 'flag', color: '#A855F7', label: undefined },
+  { icon: 'cafe-outline', color: '#8B5CF6', label: 'Starbucks' },
+  { icon: 'cart-outline', color: '#F59E0B', label: 'Walmart' },
+  { icon: 'flag', color: '#EC4899', label: undefined },
 ];
 
 const NODE_SIZE = 40;
@@ -51,7 +51,7 @@ export const RouteDiagram: React.FC = () => {
     <Animated.View entering={FadeIn.duration(450).delay(300)} style={styles.container}>
       <View style={styles.lineWrap}>
         <View style={[styles.segment, { backgroundColor: Colors.primary.blue }]} />
-        <View style={[styles.segment, { backgroundColor: Colors.semantic.success }]} />
+        <View style={[styles.segment, { backgroundColor: '#8B5CF6' }]} />
         <View style={[styles.segment, { backgroundColor: Colors.primary.blue }]} />
       </View>
       <View style={styles.nodes}>
@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
   node: {
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: Colors.primary.teal,
+    shadowColor: Colors.primary.blue,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.35,
     shadowRadius: 4,

@@ -15,6 +15,8 @@ export { default as uiReducer } from './uiSlice';
 export { default as offlineReducer } from './offlineSlice';
 export { default as errorReducer } from './errorSlice';
 export { default as loadingReducer } from './loadingSlice';
+export { default as voiceReducer } from './voiceSlice';
+export { default as anchorsReducer } from './anchorsSlice';
 
 // Auth actions
 export {
@@ -137,3 +139,41 @@ export {
   resetLoading,
 } from './loadingSlice';
 export type { LoadingSliceState } from './loadingSlice';
+
+// Voice actions
+export {
+  setVoiceStatus,
+  setConnected,
+  setSessionId,
+  setTranscript,
+  setPartialTranscript,
+  setAudioLevel,
+  toggleVoiceMode,
+  setVoiceModeEnabled,
+  setVoiceError,
+  clearVoiceError,
+  setPendingRouteId,
+  setSuggestedResponse,
+  setNluConfidence,
+  setRequiresConfirmation,
+  handleNluResult,
+  startListening,
+  stopListening,
+  startSpeaking,
+  stopSpeaking,
+  confirmAction,
+  rejectAction,
+  resetVoice,
+} from './voiceSlice';
+export type { VoiceStatus, VoiceState } from './voiceSlice';
+
+// Anchors actions
+export {
+  setAnchor,
+  removeAnchor,
+  touchAnchor,
+  importAnchors,
+  setHydrated,
+  clearAnchors,
+} from './anchorsSlice';
+export type { AnchorsState } from './anchorsSlice';

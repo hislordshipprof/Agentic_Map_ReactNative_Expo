@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { View, Text, AppState, LogBox, type AppStateStatus } from 'react-native';
 
 // Suppress known warnings from third-party libraries
@@ -17,9 +17,13 @@ import {
 } from '@expo-google-fonts/dm-sans';
 import * as SplashScreen from 'expo-splash-screen';
 import { Provider } from 'react-redux';
-import { store } from '@/redux/store';
+import { PersistGate } from 'redux-persist/integration/react';
+import { store, persistor } from '@/redux/store';
+import { importAnchors } from '@/redux/slices/anchorsSlice';
 import { LoadingOverlay, ErrorDialog } from '@/components/Common';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ElevenLabsVoiceProvider } from '@/providers/ElevenLabsVoiceProvider';
+import { ThemeProvider } from '@/theme';
 import { QueryClient, onlineManager, focusManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
@@ -46,10 +50,8 @@ function shouldDehydrateQuery(query: { queryKey: readonly unknown[] }): boolean 
   return false;
 }
 
-// Prevent the splash screen from auto-hiding
-SplashScreen.preventAutoHideAsync().catch(() => {
-  // Ignore errors - splash screen might already be hidden
-});
+// Hide native splash immediately — our animated splash.tsx handles the brand reveal
+SplashScreen.hideAsync().catch(() => {});
 
 export default function RootLayout(): JSX.Element {
   const [fontsLoaded, fontError] = useFonts({
@@ -60,15 +62,8 @@ export default function RootLayout(): JSX.Element {
     'DMSans-Bold': DMSans_700Bold,
   });
 
-  const onLayoutRootView = useCallback(async () => {
-    if (fontsLoaded || fontError) {
-      await SplashScreen.hideAsync().catch(() => {});
-    }
-  }, [fontsLoaded, fontError]);
-
-  useEffect(() => {
-    onLayoutRootView();
-  }, [onLayoutRootView]);
+  // Native splash is hidden immediately at module level above.
+  // Fonts load in background while our animated splash.tsx plays.
 
   useEffect(() => {
     const unsubNet = NetInfo.addEventListener((state) => {
@@ -86,9 +81,7 @@ export default function RootLayout(): JSX.Element {
   // Show loading state instead of returning null
   if (!fontsLoaded && !fontError) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
-        <Text>Loading...</Text>
-      </View>
+      <View style={{ flex: 1, backgroundColor: '#FAFBFD' }} />
     );
   }
 
@@ -116,21 +109,55 @@ export default function RootLayout(): JSX.Element {
           }}
         >
           <Provider store={store}>
-            <View style={{ flex: 1 }}>
-              <StatusBar style="auto" />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                }}
-              >
-                <Stack.Screen name="index" options={{ headerShown: false }} />
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-                <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
-                <Stack.Screen name="+not-found" />
-              </Stack>
-              <LoadingOverlay fullScreen />
-            </View>
+            <PersistGate
+              loading={
+                <View style={{ flex: 1, backgroundColor: '#FAFBFD' }} />
+              }
+              persistor={persistor}
+              onBeforeLift={async () => {
+                // Migrate existing anchors from old AsyncStorage key to Redux
+                // This runs once when persist gate lifts
+                try {
+                  const oldKey = '@agentic_map:user_anchors';
+                  const oldData = await AsyncStorage.getItem(oldKey);
+                  if (oldData) {
+                    const anchors = JSON.parse(oldData);
+                    if (Array.isArray(anchors) && anchors.length > 0) {
+                      store.dispatch(importAnchors(anchors));
+                      // Clear old key after successful migration
+                      await AsyncStorage.removeItem(oldKey);
+                      console.log('[Migration] Imported', anchors.length, 'anchors from AsyncStorage to Redux');
+                    }
+                  }
+                } catch (err) {
+                  console.warn('[Migration] Failed to migrate anchors:', err);
+                }
+              }}
+            >
+              <ThemeProvider>
+                <ElevenLabsVoiceProvider>
+                  <View style={{ flex: 1 }}>
+                    <StatusBar style="auto" />
+                    <Stack
+                      screenOptions={{
+                        headerShown: false,
+                      }}
+                    >
+                      <Stack.Screen name="index" options={{ headerShown: false }} />
+                      <Stack.Screen name="splash" options={{ headerShown: false }} />
+                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+                      <Stack.Screen name="auth" options={{ headerShown: false }} />
+                      <Stack.Screen name="route-display/index" options={{ headerShown: false }} />
+                      <Stack.Screen name="voice-assistant/index" options={{ headerShown: false }} />
+                      <Stack.Screen name="text-chat/index" options={{ headerShown: false }} />
+                      <Stack.Screen name="+not-found" />
+                    </Stack>
+                    <LoadingOverlay fullScreen />
+                  </View>
+                </ElevenLabsVoiceProvider>
+              </ThemeProvider>
+            </PersistGate>
             <ErrorDialog />
           </Provider>
         </PersistQueryClientProvider>

@@ -19,6 +19,13 @@ class StopDto {
   @IsOptional() @IsString() category?: string;
 }
 
+class AnchorDto {
+  @IsString() name: string;
+  @ValidateNested()
+  @Type(() => LatLngDto)
+  location: LatLngDto;
+}
+
 export class NavigateWithStopsDto {
   @ValidateNested()
   @Type(() => LatLngDto)
@@ -34,6 +41,12 @@ export class NavigateWithStopsDto {
   @ValidateNested({ each: true })
   @Type(() => StopDto)
   stops: StopDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AnchorDto)
+  anchors?: AnchorDto[];
 
   @IsOptional()
   @IsObject()

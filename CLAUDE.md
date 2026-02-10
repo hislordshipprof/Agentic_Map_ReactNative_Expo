@@ -4,175 +4,243 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an **Agentic Mobile Map** project focused on building an intelligent errand routing system. The system allows users to plan multi-stop journeys efficiently using natural language in 1-2 conversational turns instead of the current 5-6 manual steps.
+**Agentic Mobile Map** - An intelligent voice-first errand routing system that allows users to plan multi-stop journeys using natural language.
 
 ### Key Concept
 Transform: "Set anchor → Set radius → Find stop → Select stop → Find another stop → Select stop → Optimize → Navigate"
 Into: "Take me home with Starbucks and Walmart on the way"
 
+### Dual Input Modes
+- **Voice Mode**: WebSocket streaming with VAD → STT → NLU → TTS pipeline
+- **Text Mode**: REST API for typed requests
+
+---
+
+## Quick Reference
+
+### Development Commands
+
+```bash
+# Frontend (Expo/React Native)
+cd frontend
+npm install                    # Install dependencies
+npx expo start                 # Start development server
+npx expo run:android           # Run on Android
+npx expo run:ios               # Run on iOS
+npm test                       # Run tests
+
+# Backend (NestJS)
+cd backend
+npm install                    # Install dependencies
+npm run start:dev              # Start development server
+npm test                       # Run tests
+npm run build                  # Production build
+
+# Type Checking
+npx tsc --noEmit               # Check for TypeScript errors
+```
+
+### Key Files to Know
+
+| Purpose | Location |
+|---------|----------|
+| Main app entry | `frontend/app/(tabs)/index.tsx` |
+| Navigation layout | `frontend/app/_layout.tsx` |
+| Theme/Colors | `frontend/src/theme/colors.ts` |
+| API services | `frontend/src/services/api/` |
+| Redux store | `frontend/src/redux/` |
+| Hooks | `frontend/src/hooks/` |
+| Backend modules | `backend/src/modules/` |
+| Errand routing | `backend/src/modules/errand/` |
+| NLU processing | `backend/src/modules/nlu/` |
+| Voice gateway | `backend/src/modules/voice/` |
+
+---
+
 ## Architecture
 
-### Backend (NestJS + TypeScript)
-- **Database**: PostgreSQL (main data) + Redis (caching)
-- **External APIs**: Google Maps, Google Places, Gemini API (2.5 Pro + 3.0 Pro)
-- **Queue**: Bull (async job processing)
+### Frontend Stack
+- **Framework**: React Native (Expo)
+- **State**: Redux Toolkit
+- **Navigation**: Expo Router (file-based)
+- **Styling**: NativeWind (Tailwind for RN)
+- **Maps**: react-native-maps with Google Maps
+- **Voice**: expo-av for audio recording
 
-#### Gemini Dual-Agent Architecture
-- **Gemini 2.5 Pro (Fast Agent)**: First-pass NLU, intent classification, entity extraction (~85% of requests)
-- **Gemini 3.0 Pro (Advanced Agent)**: Complex disambiguation, multi-turn reasoning (~15% of requests)
-- **Pipeline Strategy**: 2.5 Pro processes all requests; escalates to 3.0 Pro when confidence < 0.60
+### Backend Stack
+- **Framework**: NestJS with TypeScript
+- **Real-Time**: WebSocket gateway (Socket.io)
+- **AI/NLU**: Gemini 2.5 Flash + Gemini 3.0 Pro
+- **Voice**: Google Cloud STT + TTS
+- **Maps**: Google Maps Routes API + Places API
+- **Database**: PostgreSQL + Prisma
+- **Cache**: Redis
+- **Queue**: Bull
 
-#### Key Services
-- **DetourBufferService**: Calculates dynamic detour budget (5-10% of route length)
-- **PlaceSearchService**: Finds and ranks place candidates by relevance
-- **OptimizationService**: TSP solver for optimal stop ordering
-- **AgentRouterService**: Routes between Gemini 2.5 Pro and 3.0 Pro based on confidence
-- **GeminiFastService**: Fast intent/entity extraction using Gemini 2.5 Pro
-- **GeminiAdvancedService**: Complex reasoning using Gemini 3.0 Pro
-- **EntityResolverService**: Resolves "home" → saved anchor, "Starbucks" → place match
-
-#### Core API Endpoints
-- `POST /api/v1/errand/navigate-with-stops` - Main route planning endpoint
-- `GET /api/v1/errand/suggest-stops-on-route` - Proactive route suggestions
-- `GET /api/v1/places/disambiguate` - Handle ambiguous destinations
-- `GET /api/v1/user/anchors` - User's saved locations
-
-### Frontend (React Native + Redux)
-- **State Management**: Redux with slices for conversation, route, NLU, UI, user, offline
-- **Maps**: Google Maps SDK for route visualization
-- **Offline**: SQLite (mobile) / IndexedDB (web) for caching
-
-#### Key Components
-- **ConversationUI**: Chat-like interface for user interactions
-- **ConfidenceRouting**: Different UI flows based on NLU confidence
-- **DisambiguationDialog**: Handle multiple place options
-- **RouteConfirmation**: Visual route preview before navigation
-- **AdjustmentMode**: Modify stops after initial optimization
-
-### Three-Tier Confidence System
-1. **HIGH (≥0.80)**: Execute immediately, show results (Gemini 2.5 Pro)
-2. **MEDIUM (0.60-0.79)**: Show confirmation dialog (Gemini 2.5 Pro)
-3. **LOW (<0.60)**: Escalate to Gemini 3.0 Pro for advanced reasoning, then offer alternatives if still unclear
-
-## Development Commands
-
-This is currently a documentation-only project. The actual implementation would require:
-
-### Backend Setup
-```bash
-# Would use these commands when implementing:
-npm install
-npm run start:dev
-npm run test
-npm run build
+### Voice Pipeline Flow
+```
+User Speaks → Mic → Audio Chunks → WebSocket → VAD → STT → NLU → Route Planning → TTS → Speaker
 ```
 
-### Frontend Setup
-```bash
-# Would use these commands when implementing:
-npm install
-npx react-native start
-npx react-native run-ios
-npx react-native run-android
-npm test
+### Voice States
+```
+IDLE → LISTENING → PROCESSING → SPEAKING → CONFIRMING → NAVIGATING
 ```
 
-### Database
-```bash
-# Would use these commands when implementing:
-npm run migration:generate
-npm run migration:run
-npm run seed
-```
+---
+
+## Coding Standards
+
+See `.claude/rules/` for detailed guidelines:
+- **coding-style.md**: File organization, naming, function size limits
+- **testing.md**: Test coverage requirements, TDD workflow
+- **security.md**: API key handling, input validation
+- **git-workflow.md**: Commit format, branch naming, PR process
+
+### Quick Checklist
+- [ ] Functions < 50 lines
+- [ ] Files < 800 lines
+- [ ] No hardcoded API keys (use env vars)
+- [ ] No `console.log` in production code
+- [ ] TypeScript strict mode (no `any`)
+- [ ] Error handling present
+- [ ] Tests for critical paths
+
+---
 
 ## Key Business Logic
 
-### Dynamic Detour Buffer Calculation
-- Short routes (≤2 miles): 10% max detour
-- Medium routes (2-10 miles): 7% max detour
-- Long routes (>10 miles): 5% max detour
-- Absolute bounds: 400m minimum, 1600m maximum
+### Route Planning Algorithm
+1. **Never hard block** - Always return a route
+2. **Best/shortest first** - Category winner = lowest detour
+3. **Inform, don't decide** - Warn user about long detours
+4. **Voice vs Text**: Voice gets 1 option, Text gets 5 alternatives
 
-### Stop Status Classification
-- **NO_DETOUR** (0-50m extra): Always include
-- **MINIMAL** (≤25% of buffer): Include
-- **ACCEPTABLE** (26-75% of buffer): Optional
-- **NOT_RECOMMENDED** (>75% of buffer): Exclude
+### Detour Categories
+| Category | Extra Time | Action |
+|----------|-----------|--------|
+| MINIMAL | 0-5 min | Execute silently |
+| SIGNIFICANT | 5-10 min | Warn user |
+| FAR | 10+ min | Confirm with user |
 
-### Optimization Algorithm
-Uses TSP (Traveling Salesman Problem) solving:
-1. Nearest Neighbor (fast, good for 2-4 stops)
-2. 2-opt optimization (better quality)
-3. Google OR-Tools (production recommendation for 10+ stops)
+### NLU Confidence Routing
+| Confidence | Action |
+|------------|--------|
+| ≥ 0.80 (HIGH) | Execute immediately |
+| 0.60-0.79 (MEDIUM) | Ask confirmation |
+| < 0.60 (LOW) | Escalate to Gemini 3.0 Pro |
 
-## Data Flow
+---
 
-1. User input → Frontend conversation UI
-2. NLU confidence check → Route to appropriate UI flow
-3. Backend processes: entity resolution → place search → optimization → detour validation
-4. Frontend displays: route confirmation with map visualization
-5. User accepts → Navigation starts
+## Environment Variables
 
-## Error Handling Strategy
+### Frontend (.env)
+```
+EXPO_PUBLIC_API_URL=http://localhost:3000
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=...
+```
 
-### Backend Errors
-- No places found → Suggest expanding search radius
-- Route exceeds budget → Show which stops to remove/adjust
-- API rate limits → Fall back to cached data
-- Ambiguous destinations → Return disambiguation candidates
+### Backend (.env)
+```
+DATABASE_URL=postgresql://...
+REDIS_URL=redis://...
+GOOGLE_MAPS_API_KEY=...
+GOOGLE_PLACES_API_KEY=...
+GEMINI_API_KEY=...
+GOOGLE_CLOUD_PROJECT=...
+```
 
-### Frontend Errors
-- Network failure → Switch to offline mode with cached data
-- Location unavailable → Prompt user to enable location services
-- Low confidence utterances → Escalate to Gemini 3.0 Pro, then show alternatives if needed
+---
 
-## Caching Strategy
+## Common Tasks
 
-### Cache Durations
-- Routes: 1 hour (traffic changes)
-- Places: 7 days (details stable)
-- Anchors: 30 days (user locations)
-- Disambiguation results: 14 days
+### Adding a New Screen
+1. Create file in `frontend/app/` (file-based routing)
+2. Add to navigation if needed in `_layout.tsx`
+3. Follow existing patterns for styling and state
 
-### Offline Support
-- Cache top 20 popular stops near each saved anchor
-- Store last 10 routes for offline access
-- Sync when network returns with non-blocking updates
+### Adding a New Backend Endpoint
+1. Create/update controller in `backend/src/modules/`
+2. Add service logic
+3. Define DTOs with validation
+4. Add tests
 
-## Implementation Phases
+### Adding a New Redux Slice
+1. Create slice in `frontend/src/redux/slices/`
+2. Export from `frontend/src/redux/index.ts`
+3. Add to store configuration
 
-1. **Foundation** (Weeks 1-2): Core services, database, Gemini 2.5 Pro integration
-2. **Smart Routing** (Weeks 3-4): Place search, optimization, agent routing
-3. **Refinement** (Weeks 5-6): Error handling, offline support, Gemini 3.0 Pro integration
-4. **Polish** (Weeks 7+): Testing, performance optimization, launch preparation
+---
 
-## Success Metrics
+## Important Files Structure
 
-- 95% of routes fit within distance budget without user adjustment
-- 90% correct destination disambiguation on first try
-- <2 second response time for route suggestions
-- 85% accuracy on "best" stop selection
-- Offline functionality with cached data
+```
+.
+├── frontend/                   # React Native (Expo) app
+│   ├── app/                    # Expo Router screens
+│   │   ├── (tabs)/             # Tab navigator screens
+│   │   ├── auth/               # Authentication screens
+│   │   └── _layout.tsx         # Root layout
+│   ├── src/
+│   │   ├── components/         # Reusable components
+│   │   ├── hooks/              # Custom React hooks
+│   │   ├── services/           # API and utility services
+│   │   ├── redux/              # Redux store and slices
+│   │   └── theme/              # Colors, typography
+│   └── package.json
+├── backend/                    # NestJS API server
+│   ├── src/
+│   │   ├── modules/
+│   │   │   ├── errand/         # Route planning
+│   │   │   ├── nlu/            # NLU processing
+│   │   │   ├── places/         # Place search
+│   │   │   ├── voice/          # Voice gateway
+│   │   │   └── user/           # User management
+│   │   └── main.ts
+│   └── package.json
+├── docs/                       # Documentation
+│   └── FINAL_REQUIREMENTS.md   # Consolidated requirements
+├── .claude/
+│   ├── rules/                  # Coding standards
+│   └── skills/                 # Claude Code skills
+└── CLAUDE.md                   # This file
+```
 
-## Important Notes
+---
 
-- This is currently a **documentation and planning project**
-- No actual code implementation exists yet
-- All files are specification and requirement documents
-- Focus on understanding the system design before implementation
-- The system emphasizes user experience over technical complexity
-- Natural language understanding is core to the user interaction model
+## Skills & Agents Available
 
-## Files Structure
+### Skills (`.claude/skills/`)
+- **backend-errand-routing.md**: Backend development patterns
+- **frontend-errand-routing.md**: Frontend development patterns
 
-- `docs/overview.md` - Complete system overview and user journey
-- `docs/requirements-backend.md` - Detailed backend implementation requirements
-- `docs/requirements-frontend.md` - Detailed frontend implementation requirements
-- `docs/reading-guide.md` - Guide for navigating the documentation
-- `docs/systemPrompt.md` - Development workflow and atomic chunking rules
-- `frontend/` - React Native (Expo) application
-- `backend/` - NestJS API server
-- `.claude/skills/` - Claude Code skills for frontend and backend development
-- `IMPLEMENTATION_PLAN.md` - Comprehensive implementation plan
+### Agents (`.claude/agents/`)
+- **planner.md**: Break down complex features into actionable steps
+- **code-reviewer.md**: Systematic code review for quality & security
+- **build-error-resolver.md**: Fix TypeScript/build errors with minimal changes
+- **tdd-guide.md**: Test-driven development workflow
 
-When implementing, start with Phase 1 foundation work and ensure all core services are properly tested before moving to advanced features.
+---
+
+## Troubleshooting
+
+### "Excessive pending callbacks" Error
+Usually caused by infinite loops in useEffect. Check:
+- Dependency arrays for functions that change on every render
+- Use `useRef` for initialization flags
+
+### TypeScript Errors
+```bash
+npx tsc --noEmit  # Check all errors
+```
+
+### Metro Bundler Issues
+```bash
+npx expo start -c  # Clear cache and restart
+```
+
+### Backend Won't Start
+Check environment variables and database connection:
+```bash
+npm run start:dev -- --debug
+```

@@ -26,10 +26,10 @@ const STEP_LABELS = [
 ];
 
 const MARKERS = [
-  { n: 1, color: '#5EEAD4', icon: 'paper-plane' as const },
-  { n: 2, color: Colors.semantic.success },
-  { n: 3, color: Colors.semantic.warning },
-  { n: 4, color: '#A855F7' },
+  { n: 1, color: '#93C5FD', icon: 'paper-plane' as const },
+  { n: 2, color: '#8B5CF6' },
+  { n: 3, color: '#F59E0B' },
+  { n: 4, color: '#EC4899' },
 ];
 
 const GRID_SIZE = 10;
@@ -192,14 +192,14 @@ const styles = StyleSheet.create({
     right: '8%',
     top: '42%',
     height: 4,
-    backgroundColor: Colors.primary.teal,
+    backgroundColor: Colors.primary.blue,
     borderRadius: 2,
   },
   marker: {
     position: 'absolute',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: Colors.primary.teal,
+    shadowColor: Colors.primary.blue,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
     shadowRadius: 6,

@@ -6,13 +6,13 @@ module.exports = {
     slug: "agentic-mobile-map",
     version: "1.0.0",
     orientation: "portrait",
-    icon: "./assets/icon.png",
+    icon: "./assets/App_logo.png",
     scheme: "agentic-map",
     userInterfaceStyle: "automatic",
     splash: {
-      image: "./assets/splash.png",
+      image: "./assets/App_logo.png",
       resizeMode: "contain",
-      backgroundColor: "#1a1a2e",
+      backgroundColor: "#FAFBFD",
     },
     assetBundlePatterns: ["**/*"],
     ios: {
@@ -34,8 +34,8 @@ module.exports = {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: "./assets/adaptive-icon.png",
-        backgroundColor: "#1a1a2e",
+        foregroundImage: "./assets/App_logo.png",
+        backgroundColor: "#FAFBFD",
       },
       package: "com.agenticmap.mobile",
       config: {
@@ -46,7 +46,11 @@ module.exports = {
       permissions: [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
+        "ACCESS_NETWORK_STATE",
         "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "WAKE_LOCK",
+        "BLUETOOTH",
       ],
     },
     web: {
@@ -58,14 +62,10 @@ module.exports = {
       "expo-router",
       "expo-location",
       "expo-secure-store",
-      [
-        "@react-native-voice/voice",
-        {
-          microphonePermission: "This app uses the microphone for voice input so you can say your destination and stops.",
-          speechRecognitionPermission: "This app uses speech recognition to turn your voice into text for planning routes.",
-        },
-      ],
-      "./plugins/withAndroidGradleJdk21",
+      "expo-font",
+      "@siteed/expo-audio-studio",
+      "@livekit/react-native-expo-plugin",
+      "@config-plugins/react-native-webrtc",
       "./plugins/withGoogleMapsApiKeyPlaceholder",
     ],
     experiments: {

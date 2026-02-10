@@ -9,7 +9,25 @@
 
 import { apiClient } from './client';
 import type { ApiResponse } from '@/types/api';
-import type { PlaceCandidate } from '@/components/Dialogs';
+
+/**
+ * Place candidate for search and disambiguation results
+ */
+export interface PlaceCandidate {
+  id: string;
+  name: string;
+  address: string;
+  location?: { lat: number; lng: number };
+  distance?: number;
+  distanceUnit?: 'mi' | 'km';
+  isOpen?: boolean;
+  openUntil?: string;
+  rating?: number;
+  reviewCount?: number;
+  photoUrl?: string;
+  detourCost?: number;
+  detourStatus?: 'NO_DETOUR' | 'MINIMAL' | 'ACCEPTABLE' | 'NOT_RECOMMENDED';
+}
 
 /**
  * Place search request

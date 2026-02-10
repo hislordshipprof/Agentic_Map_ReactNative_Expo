@@ -1,4 +1,4 @@
-/** Skip button for onboarding: top-right, marks complete and navigates to app. */
+/** Skip button for onboarding: top-right, gray text on light bg. */
 
 import React from 'react';
 import { Text, StyleSheet, Pressable } from 'react-native';
@@ -7,7 +7,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { Colors, FontFamily, FontSize, Spacing, SpringConfig } from '@/theme';
+import { FontFamily, FontSize, Spacing, SpringConfig } from '@/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -52,6 +52,6 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.primary,
     fontSize: FontSize.sm,
     fontWeight: '500',
-    color: Colors.dark.text.secondary,
+    color: '#6B7280',
   },
 });

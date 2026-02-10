@@ -93,17 +93,19 @@ const getCategoryIcon = (category?: string): keyof typeof Ionicons.glyphMap => {
 
 /**
  * Get detour label text
+ * Note: detourCost is extra driving distance, not perpendicular distance from route
  */
 const getDetourLabel = (status: DetourStatus, detourCost: number): string => {
+  const distanceStr = formatDistance(detourCost / 1609.34);
   switch (status) {
     case 'NO_DETOUR':
       return 'On your route';
     case 'MINIMAL':
-      return `+${formatDistance(detourCost / 1609.34)} detour`;
+      return `+${distanceStr} extra`;
     case 'ACCEPTABLE':
-      return `+${formatDistance(detourCost / 1609.34)} detour`;
+      return `+${distanceStr} extra`;
     case 'NOT_RECOMMENDED':
-      return `+${formatDistance(detourCost / 1609.34)} off route`;
+      return `+${distanceStr} extra`;
     default:
       return '';
   }

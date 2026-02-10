@@ -5,14 +5,14 @@
  * Glassmorphism design with teal accents.
  *
  * Features:
- * - Dark glassmorphism background
+ * - Dark glassmorphism background (default) or theme-aware via `colors` prop
  * - Animated send button with teal glow
  * - Voice input button with recording animation
  * - Smooth focus transitions
  * - Multiline support with auto-grow
  */
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   TextInput,
@@ -45,6 +45,7 @@ import {
   FontFamily,
   FontSize,
 } from '@/theme';
+import type { ThemePalette } from '@/theme/palettes';
 import { InputValidator } from '@/services/security';
 
 /**
@@ -71,6 +72,10 @@ export interface UserInputFieldProps {
   style?: ViewStyle;
   /** Maximum input length */
   maxLength?: number;
+  /** Disable wrapper padding (for inline usage) */
+  disableWrapperPadding?: boolean;
+  /** Theme palette — when provided, renders theme-aware colors */
+  colors?: ThemePalette;
 }
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
@@ -89,6 +94,8 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
   isRecording = false,
   style,
   maxLength = 500,
+  disableWrapperPadding = false,
+  colors,
 }) => {
   const [text, setText] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -101,10 +108,47 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
   const voiceButtonScale = useSharedValue(1);
   const voicePulse = useSharedValue(1);
 
+  // Derive color tokens - using blue/pink-cyan gradient colors to match design
+  const c = useMemo(() => {
+    if (!colors) {
+      return {
+        wrapperBg: Colors.dark.background,
+        containerBg: Colors.effects.glassDark,
+        containerBorder: Colors.dark.border,
+        focusBorder: Colors.primary.blue,
+        inputText: Colors.dark.text.primary,
+        disabledText: Colors.dark.text.tertiary,
+        placeholder: Colors.dark.text.tertiary,
+        sendInactive: [Colors.dark.elevated, Colors.dark.surface] as readonly string[],
+        sendActive: ['#B8D4E8', '#A8E0E8'] as readonly string[], // Light blue → cyan gradient
+        sendIcon: '#4A4A5A',
+        voiceBg: Colors.dark.elevated,
+        voiceIcon: Colors.dark.text.secondary,
+        voiceActiveIcon: Colors.primary.blue,
+        voiceGlow: Colors.primary.blue,
+      };
+    }
+    return {
+      wrapperBg: colors.background.primary,
+      containerBg: colors.input.background,
+      containerBorder: colors.input.border,
+      focusBorder: colors.primary.blue,
+      inputText: colors.input.text,
+      disabledText: colors.text.tertiary,
+      placeholder: colors.input.placeholder,
+      sendInactive: ['#E5E7EB', '#F3F4F6'] as readonly string[],
+      sendActive: ['#B8D4E8', '#A8E0E8'] as readonly string[], // Light blue → cyan gradient
+      sendIcon: '#4A4A5A',
+      voiceBg: colors.surface.elevated,
+      voiceIcon: colors.text.secondary,
+      voiceActiveIcon: colors.primary.blue,
+      voiceGlow: colors.primary.blue,
+    };
+  }, [colors]);
+
   // Handle text change
   const handleChangeText = useCallback((value: string) => {
     setText(value);
-    // Animate send button glow based on text presence
     sendButtonGlow.value = withTiming(value.trim().length > 0 ? 1 : 0, {
       duration: 200,
     });
@@ -126,24 +170,19 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
   const handleSend = useCallback(() => {
     if (disabled || isLoading) return;
 
-    // Validate and sanitize input
     const validation = InputValidator.validateUtterance(text);
     if (!validation.isValid) {
-      // Input is invalid - don't send
-      // Could show a toast here, but for now just ignore
       if (__DEV__) {
         console.warn('[UserInputField] Invalid input:', validation.error);
       }
       return;
     }
 
-    // Animate button press
     sendButtonScale.value = withSequence(
       withSpring(0.85, SpringConfig.bouncy),
       withSpring(1, SpringConfig.bouncy)
     );
 
-    // Send sanitized input
     onSend(validation.sanitized);
     setText('');
     sendButtonGlow.value = withTiming(0, { duration: 200 });
@@ -190,7 +229,7 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
 
     return {
       borderWidth,
-      borderColor: isFocused ? Colors.primary.teal : Colors.dark.border,
+      borderColor: isFocused ? c.focusBorder : c.containerBorder,
     };
   });
 
@@ -234,25 +273,37 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
   const canSend = text.trim().length > 0 && !disabled && !isLoading;
 
   return (
-    <View style={[styles.wrapper, style]}>
-      <Animated.View style={[styles.container, containerAnimatedStyle]}>
+    <View
+      style={[
+        !disableWrapperPadding && [styles.wrapper, { backgroundColor: c.wrapperBg }],
+        style,
+      ]}
+    >
+      <Animated.View
+        style={[
+          styles.container,
+          { backgroundColor: c.containerBg },
+          containerAnimatedStyle,
+        ]}
+      >
         {/* Text input */}
         <TextInput
           ref={inputRef}
           style={[
             styles.input,
-            disabled && styles.inputDisabled,
+            { color: c.inputText },
+            disabled && { color: c.disabledText },
           ]}
           value={text}
           onChangeText={handleChangeText}
           onFocus={handleFocus}
           onBlur={handleBlur}
           placeholder={placeholder}
-          placeholderTextColor={Colors.dark.text.tertiary}
+          placeholderTextColor={c.placeholder}
           editable={!disabled && !isRecording}
           maxLength={maxLength}
           multiline
-          numberOfLines={1}
+          textAlignVertical="center"
           returnKeyType="send"
           blurOnSubmit
           onSubmitEditing={handleSend}
@@ -262,10 +313,20 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
         {showVoiceButton && (
           <View style={styles.voiceButtonContainer}>
             {/* Glow effect for recording */}
-            <Animated.View style={[styles.voiceGlow, voiceGlowAnimatedStyle]} />
+            <Animated.View
+              style={[
+                styles.voiceGlow,
+                { backgroundColor: c.voiceGlow },
+                voiceGlowAnimatedStyle,
+              ]}
+            />
 
             <AnimatedTouchable
-              style={[styles.voiceButton, voiceButtonAnimatedStyle]}
+              style={[
+                styles.voiceButton,
+                { backgroundColor: c.voiceBg },
+                voiceButtonAnimatedStyle,
+              ]}
               onPressIn={handleVoicePressIn}
               onPressOut={handleVoicePressOut}
               disabled={disabled || isLoading}
@@ -274,7 +335,7 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
               <Ionicons
                 name={isRecording ? 'mic' : 'mic-outline'}
                 size={22}
-                color={isRecording ? Colors.primary.teal : Colors.dark.text.secondary}
+                color={isRecording ? c.voiceActiveIcon : c.voiceIcon}
               />
             </AnimatedTouchable>
           </View>
@@ -290,8 +351,8 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
           <LinearGradient
             colors={
               canSend
-                ? [Colors.primary.teal, Colors.primary.tealDark]
-                : [Colors.dark.elevated, Colors.dark.surface]
+                ? (c.sendActive as [string, string])
+                : (c.sendInactive as [string, string])
             }
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -301,13 +362,13 @@ export const UserInputField: React.FC<UserInputFieldProps> = ({
               <Ionicons
                 name="hourglass-outline"
                 size={20}
-                color={Colors.dark.text.primary}
+                color={c.sendIcon}
               />
             ) : (
               <Ionicons
                 name="send"
                 size={18}
-                color={Colors.dark.text.primary}
+                color={c.sendIcon}
                 style={styles.sendIcon}
               />
             )}
@@ -325,17 +386,14 @@ const styles = StyleSheet.create({
   wrapper: {
     paddingHorizontal: SemanticSpacing.screenPadding,
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.dark.background,
     // Safe area for bottom notch
     paddingBottom: Platform.OS === 'ios' ? Spacing.xl : Spacing.md,
   },
   container: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    backgroundColor: Colors.effects.glassDark,
     borderRadius: Layout.radiusXLarge,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
     minHeight: 52,
     maxHeight: 120,
     paddingLeft: Spacing.base,
@@ -344,16 +402,13 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Platform.OS === 'ios' ? Spacing.sm : Spacing.xs,
     paddingRight: Spacing.sm,
     fontSize: FontSize.base,
     fontFamily: FontFamily.primary,
-    color: Colors.dark.text.primary,
+    minHeight: 40,
     maxHeight: 100,
     lineHeight: 22,
-  },
-  inputDisabled: {
-    color: Colors.dark.text.tertiary,
   },
   voiceButtonContainer: {
     position: 'relative',
@@ -366,7 +421,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.primary.teal,
   },
   voiceButton: {
     width: 40,
@@ -374,7 +428,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.dark.elevated,
   },
   sendButtonWrapper: {
     marginBottom: 2,

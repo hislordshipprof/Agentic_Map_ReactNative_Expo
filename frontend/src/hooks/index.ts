@@ -16,15 +16,12 @@ export {
 // Route hook (route tab and adjustment)
 export { useRoute } from './useRoute';
 
-// Offline hook (cache and sync)
-export {
-  useOffline,
-  type UseOfflineResult,
-  type CachedData,
-} from './useOffline';
-
 // Location hook (current position for conversation and navigate)
-export { useLocation, type UseLocationResult } from './useLocation';
+export {
+  useLocation,
+  type UseLocationResult,
+  type LocationStatus,
+} from './useLocation';
 
 // Error handling hook
 export {
@@ -41,9 +38,27 @@ export {
   type LoadingOptions,
 } from './useLoadingState';
 
-// Voice input hook (hold-to-talk STT)
+// Voice mode hook (full voice flow orchestration)
 export {
-  useVoiceInput,
-  type UseVoiceInputOptions,
-  type UseVoiceInputResult,
-} from './useVoiceInput';
+  useVoiceMode,
+  type UseVoiceModeResult,
+} from './useVoiceMode';
+
+// ElevenLabs voice hook (WebRTC-based, ultra-low latency)
+export { useElevenLabsVoice } from './useElevenLabsVoice';
+
+// Unified voice hook (switches between legacy and ElevenLabs)
+export {
+  useUnifiedVoice,
+  type UseUnifiedVoiceResult,
+} from './useUnifiedVoice';
+
+// Navigate with stops hook (shared route planning logic)
+export { useNavigateWithStops } from './useNavigateWithStops';
+
+// User anchors hook (home, work, etc.)
+export {
+  useUserAnchors,
+  type UseUserAnchorsResult,
+  type AnchorCoordinates,
+} from './useUserAnchors';

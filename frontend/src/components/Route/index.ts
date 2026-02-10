@@ -19,5 +19,9 @@ export type { RouteDetailsProps } from './RouteDetails';
 export { RouteMap } from './RouteMap';
 export type { RouteMapProps } from './RouteMap';
 
-export { RouteConfirmationScreen } from './RouteConfirmationScreen';
-export type { RouteConfirmationScreenProps } from './RouteConfirmationScreen';
+// New route display components
+export { RouteTimeline } from './RouteTimeline';
+export { OptimizationBadge } from './OptimizationBadge';
+export { StatCards } from './StatCards';
+export { RouteSummarySheet } from './RouteSummarySheet';
+export type { RouteSummarySheetProps } from './RouteSummarySheet';

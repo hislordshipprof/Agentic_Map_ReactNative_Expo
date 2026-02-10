@@ -16,6 +16,12 @@ export * from './typography';
 export * from './spacing';
 export * from './animations';
 
+// Dual-theme system (light/dark)
+export * from './palettes';
+export { ThemeProvider, ThemeContext } from './ThemeContext';
+export type { ThemeMode, ThemeContextValue, ThemeProviderProps } from './ThemeContext';
+export { useThemeColors, useTheme } from './useThemeColors';
+
 // Re-export commonly used items for convenience
 export { Colors, ColorUtils } from './colors';
 export { 

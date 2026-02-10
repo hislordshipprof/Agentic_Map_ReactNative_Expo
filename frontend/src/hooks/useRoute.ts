@@ -6,7 +6,7 @@
 
 import { useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import type { Route } from '@/types/route';
+import type { Route, RouteOption } from '@/types/route';
 import {
   setPendingRoute,
   confirmRoute,
@@ -19,6 +19,11 @@ import {
   setError,
   updateRouteTotals,
   updatePolyline,
+  setRouteOptions,
+  showRouteOptionsSheet,
+  hideRouteOptionsSheet,
+  selectRouteOption,
+  clearRouteOptions,
 } from '@/redux/slices/routeSlice';
 import { enterAdjustmentMode, exitAdjustmentMode } from '@/redux/slices/uiSlice';
 import type { RouteStop } from '@/types/route';
@@ -34,6 +39,11 @@ export function useRoute() {
   const error = useSelector((s: RootState) => s.route.error);
   const adjustmentMode = useSelector((s: RootState) => s.ui.adjustmentMode);
 
+  // Route options state
+  const routeOptions = useSelector((s: RootState) => (s.route as any).routeOptions || []);
+  const showRouteOptions = useSelector((s: RootState) => (s.route as any).showRouteOptions || false);
+  const destinationName = useSelector((s: RootState) => (s.route as any).destinationName || null);
+
   const setPending = useCallback((route: Route) => dispatch(setPendingRoute(route)), [dispatch]);
   const confirm = useCallback(() => dispatch(confirmRoute()), [dispatch]);
   const clear = useCallback(() => dispatch(clearPendingRoute()), [dispatch]);
@@ -47,6 +57,20 @@ export function useRoute() {
   const exitAdjustment = useCallback(() => dispatch(exitAdjustmentMode()), [dispatch]);
   const updateTotals = useCallback((t: { totalDistance: number; totalTime: number }) => dispatch(updateRouteTotals(t)), [dispatch]);
   const updatePolylineAction = useCallback((p: string) => dispatch(updatePolyline(p)), [dispatch]);
+
+  // Route options actions
+  const setRouteOptionsAction = useCallback(
+    (options: RouteOption[], destName?: string) =>
+      dispatch(setRouteOptions({ options, destinationName: destName })),
+    [dispatch]
+  );
+  const showRouteOptionsAction = useCallback(() => dispatch(showRouteOptionsSheet()), [dispatch]);
+  const hideRouteOptionsAction = useCallback(() => dispatch(hideRouteOptionsSheet()), [dispatch]);
+  const selectRouteOptionAction = useCallback(
+    (option: RouteOption) => dispatch(selectRouteOption(option)),
+    [dispatch]
+  );
+  const clearRouteOptionsAction = useCallback(() => dispatch(clearRouteOptions()), [dispatch]);
 
   return {
     pending,
@@ -68,5 +92,14 @@ export function useRoute() {
     exitAdjustment,
     updateTotals,
     updatePolyline: updatePolylineAction,
+    // Route options
+    routeOptions,
+    showRouteOptions,
+    destinationName,
+    setRouteOptions: setRouteOptionsAction,
+    showRouteOptionsSheet: showRouteOptionsAction,
+    hideRouteOptionsSheet: hideRouteOptionsAction,
+    selectRouteOption: selectRouteOptionAction,
+    clearRouteOptions: clearRouteOptionsAction,
   };
 }
