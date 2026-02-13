@@ -40,7 +40,8 @@ function withGoogleMapsApiKeyPlaceholder(config) {
   }]);
 
   config = withAppBuildGradle(config, (cfg) => {
-    let g = cfg.modResults;
+    // modResults is { path, language, contents } — use .contents
+    let g = cfg.modResults.contents;
     if (typeof g !== "string") return cfg;
 
     if (!g.includes("def googleMapsKey")) {
@@ -69,7 +70,7 @@ function withGoogleMapsApiKeyPlaceholder(config) {
         }
       }
     }
-    cfg.modResults = g;
+    cfg.modResults.contents = g;
     return cfg;
   });
 

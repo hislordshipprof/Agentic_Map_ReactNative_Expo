@@ -51,6 +51,7 @@ module.exports = {
         "MODIFY_AUDIO_SETTINGS",
         "WAKE_LOCK",
         "BLUETOOTH",
+        "FOREGROUND_SERVICE_LOCATION",
       ],
     },
     web: {
@@ -67,6 +68,7 @@ module.exports = {
       "@livekit/react-native-expo-plugin",
       "@config-plugins/react-native-webrtc",
       "./plugins/withGoogleMapsApiKeyPlaceholder",
+      "./plugins/withGoogleNavSdk",
     ],
     experiments: {
       typedRoutes: true,

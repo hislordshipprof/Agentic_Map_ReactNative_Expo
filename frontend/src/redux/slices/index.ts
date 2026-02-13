@@ -17,6 +17,7 @@ export { default as errorReducer } from './errorSlice';
 export { default as loadingReducer } from './loadingSlice';
 export { default as voiceReducer } from './voiceSlice';
 export { default as anchorsReducer } from './anchorsSlice';
+export { default as navigationReducer } from './navigationSlice';
 
 // Auth actions
 export {
@@ -177,3 +178,14 @@ export {
   clearAnchors,
 } from './anchorsSlice';
 export type { AnchorsState } from './anchorsSlice';
+
+// Navigation actions
+export {
+  setNavigationStatus,
+  setCurrentStopIndex,
+  setTotalStops,
+  updateRemainingTimeAndDistance,
+  setNavigationError,
+  resetNavigation,
+} from './navigationSlice';
+export type { NavigationStatus, NavigationState } from './navigationSlice';
