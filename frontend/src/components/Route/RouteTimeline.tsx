@@ -56,11 +56,11 @@ export const RouteTimeline: React.FC<RouteTimelineProps> = ({ origin, destinatio
                 {stop.address}
               </Text>
             )}
-            {stop.detourCost > 0 && (
+            {(stop.detourCostMin ?? 0) > 0 && (
               <View style={[styles.detourBadge, { backgroundColor: `${colors.status.acceptable}20` }]}>
                 <Ionicons name="time-outline" size={12} color={colors.status.acceptable} />
                 <Text style={[styles.detourText, { color: colors.status.acceptable }]}>
-                  +{Math.round(stop.detourCost / 60)} min detour
+                  +{Math.round(stop.detourCostMin ?? 0)} min detour
                 </Text>
               </View>
             )}

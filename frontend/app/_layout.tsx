@@ -23,6 +23,7 @@ import { importAnchors } from '@/redux/slices/anchorsSlice';
 import { LoadingOverlay, ErrorDialog } from '@/components/Common';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ElevenLabsVoiceProvider } from '@/providers/ElevenLabsVoiceProvider';
+import { GoogleNavProvider } from '@/providers/GoogleNavProvider';
 import { ThemeProvider } from '@/theme';
 import { QueryClient, onlineManager, focusManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
@@ -136,25 +137,28 @@ export default function RootLayout(): JSX.Element {
             >
               <ThemeProvider>
                 <ElevenLabsVoiceProvider>
-                  <View style={{ flex: 1 }}>
-                    <StatusBar style="auto" />
-                    <Stack
-                      screenOptions={{
-                        headerShown: false,
-                      }}
-                    >
-                      <Stack.Screen name="index" options={{ headerShown: false }} />
-                      <Stack.Screen name="splash" options={{ headerShown: false }} />
-                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-                      <Stack.Screen name="auth" options={{ headerShown: false }} />
-                      <Stack.Screen name="route-display/index" options={{ headerShown: false }} />
-                      <Stack.Screen name="voice-assistant/index" options={{ headerShown: false }} />
-                      <Stack.Screen name="text-chat/index" options={{ headerShown: false }} />
-                      <Stack.Screen name="+not-found" />
-                    </Stack>
-                    <LoadingOverlay fullScreen />
-                  </View>
+                  <GoogleNavProvider>
+                    <View style={{ flex: 1 }}>
+                      <StatusBar style="auto" />
+                      <Stack
+                        screenOptions={{
+                          headerShown: false,
+                        }}
+                      >
+                        <Stack.Screen name="index" options={{ headerShown: false }} />
+                        <Stack.Screen name="splash" options={{ headerShown: false }} />
+                        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+                        <Stack.Screen name="auth" options={{ headerShown: false }} />
+                        <Stack.Screen name="route-display/index" options={{ headerShown: false }} />
+                        <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
+                        <Stack.Screen name="voice-assistant/index" options={{ headerShown: false }} />
+                        <Stack.Screen name="text-chat/index" options={{ headerShown: false }} />
+                        <Stack.Screen name="+not-found" />
+                      </Stack>
+                      <LoadingOverlay fullScreen />
+                    </View>
+                  </GoogleNavProvider>
                 </ElevenLabsVoiceProvider>
               </ThemeProvider>
             </PersistGate>

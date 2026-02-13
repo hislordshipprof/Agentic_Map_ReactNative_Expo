@@ -2,13 +2,13 @@
  * Route Display Screen
  *
  * Shows route summary with map, recommended route, alternative routes,
- * and Start Navigation CTA that opens Google Maps directly.
+ * and Start Navigation CTA that opens the in-app navigation screen.
  *
  * Supports auto-start navigation from voice commands.
  */
 
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { View, StyleSheet, Text, Linking, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, Text, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useDispatch, useSelector } from 'react-redux';
@@ -22,29 +22,6 @@ import { Spacing, FontFamily, FontSize } from '@/theme';
 import { setAutoStartNavigation } from '@/redux/slices/routeSlice';
 import type { RootState } from '@/redux/store';
 import type { RouteOption } from '@/types/route';
-
-/**
- * Build Google Maps URL with navigation auto-start
- */
-function buildGoogleMapsNavigationUrl(
-  origin: { lat: number; lng: number },
-  destination: { lat: number; lng: number },
-  stops: Array<{ location: { lat: number; lng: number } }>
-): string {
-  const o = `${origin.lat},${origin.lng}`;
-  const d = `${destination.lat},${destination.lng}`;
-  const wp = stops.map((s) => `${s.location.lat},${s.location.lng}`).join('|');
-  
-  const params = new URLSearchParams({
-    api: '1',
-    origin: o,
-    destination: d,
-    ...(wp && { waypoints: wp }),
-    dir_action: 'navigate', // Auto-start navigation
-  });
-  
-  return `https://www.google.com/maps/dir/?${params.toString()}`;
-}
 
 export default function RouteDisplayScreen(): React.ReactElement {
   const router = useRouter();
@@ -74,36 +51,19 @@ export default function RouteDisplayScreen(): React.ReactElement {
   useEffect(() => {
     if (autoStartNavigation && baseRoute && !autoStartHandled.current) {
       autoStartHandled.current = true;
-      console.log('[RouteDisplay] Auto-starting navigation from voice command');
-      console.log('[RouteDisplay] Route:', baseRoute.id, 'Origin:', baseRoute.origin.location, 'Dest:', baseRoute.destination.location);
-      console.log('[RouteDisplay] Stops:', stops.length);
 
       // Clear the flag
       dispatch(setAutoStartNavigation(false));
 
-      // Small delay to let the screen render, then open Google Maps
+      // Small delay to let the screen render, then open in-app navigation
       const timer = setTimeout(() => {
-        console.log('[RouteDisplay] Timeout fired - opening Google Maps');
-        confirm();
-        const url = buildGoogleMapsNavigationUrl(
-          baseRoute.origin.location,
-          baseRoute.destination.location,
-          stops
-        );
-        console.log('[RouteDisplay] Google Maps URL:', url);
-        Linking.openURL(url)
-          .then(() => {
-            console.log('[RouteDisplay] Google Maps opened successfully');
-          })
-          .catch((err) => {
-            console.error('[RouteDisplay] Failed to open Google Maps:', err);
-          });
+        router.push('/navigation');
       }, 500);
 
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [autoStartNavigation, baseRoute, stops, confirm, dispatch]);
+  }, [autoStartNavigation, baseRoute, dispatch, router]);
 
   // Bottom sheet starts at 50% — pad the map so the route is visible above the sheet
   const mapFitPadding = useMemo(() => ({
@@ -115,21 +75,7 @@ export default function RouteDisplayScreen(): React.ReactElement {
 
   const handleStartNavigation = () => {
     if (!baseRoute) return;
-    
-    // Confirm the route in Redux
-    confirm();
-    
-    // Build Google Maps URL with all stops and auto-navigate
-    const url = buildGoogleMapsNavigationUrl(
-      baseRoute.origin.location,
-      baseRoute.destination.location,
-      stops
-    );
-    
-    // Open Google Maps directly
-    Linking.openURL(url).catch((err) => {
-      console.error('Failed to open Google Maps:', err);
-    });
+    router.push('/navigation');
   };
 
   const handleCancel = () => {

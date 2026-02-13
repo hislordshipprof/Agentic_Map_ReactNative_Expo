@@ -21,6 +21,7 @@ import {
   loadingReducer,
   voiceReducer,
   anchorsReducer,
+  navigationReducer,
 } from './slices';
 import { setHydrated } from './slices/anchorsSlice';
 
@@ -48,6 +49,7 @@ const rootReducer = combineReducers({
   loading: loadingReducer,
   voice: voiceReducer,
   anchors: anchorsReducer,
+  navigation: navigationReducer,
 });
 
 /**

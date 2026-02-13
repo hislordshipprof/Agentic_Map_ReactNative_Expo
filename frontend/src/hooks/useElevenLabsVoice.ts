@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { PermissionsAndroid, Platform, Linking } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 import { useConversation } from '@elevenlabs/react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { router } from 'expo-router';
@@ -34,7 +34,6 @@ import {
 } from '@/redux/slices/voiceSlice';
 import {
   setPendingRoute,
-  confirmRoute,
   clearConfirmedRoute,
   clearPendingRoute,
 } from '@/redux/slices/routeSlice';
@@ -421,6 +420,7 @@ export function useElevenLabsVoice() {
               location: { lat, lng },
               mileMarker: 0,
               detourCost: detourCostMeters,
+              detourCostMin: finalDetourMinutes,
               status,
               order,
             };
@@ -474,7 +474,7 @@ export function useElevenLabsVoice() {
 
       /**
        * Start turn-by-turn navigation
-       * Directly opens Google Maps for navigation
+       * Opens the in-app NavigationView powered by Google Navigation SDK
        */
       start_navigation: (parameters: unknown): string => {
         const params = parameters as {
@@ -484,56 +484,19 @@ export function useElevenLabsVoice() {
         console.log('[ElevenLabs] start_navigation called:', params);
 
         try {
-          // Get the current route from ref
           const route = currentRouteRef.current;
-          const stops = routeStopsRef.current;
 
           if (!route) {
             console.error('[ElevenLabs] No route available to start navigation');
             return 'No route to navigate. Please plan a route first.';
           }
 
-          console.log('[ElevenLabs] Starting navigation with route:', route.id);
-          console.log('[ElevenLabs] Origin:', route.origin.location);
-          console.log('[ElevenLabs] Destination:', route.destination.location);
-          console.log('[ElevenLabs] Stops:', stops.length);
+          console.log('[ElevenLabs] Starting in-app navigation with route:', route.id);
 
-          // Confirm the pending route
-          dispatch(confirmRoute());
+          // Navigate to in-app navigation screen (it handles confirmRoute)
+          router.push('/navigation');
 
-          // Build Google Maps URL
-          const origin = route.origin.location;
-          const destination = route.destination.location;
-          const o = `${origin.lat},${origin.lng}`;
-          const d = `${destination.lat},${destination.lng}`;
-          const wp = stops.map((s) => `${s.location.lat},${s.location.lng}`).join('|');
-
-          const urlParams = new URLSearchParams({
-            api: '1',
-            origin: o,
-            destination: d,
-            dir_action: 'navigate',
-          });
-          if (wp) {
-            urlParams.set('waypoints', wp);
-          }
-          const url = `https://www.google.com/maps/dir/?${urlParams.toString()}`;
-
-          console.log('[ElevenLabs] Opening Google Maps URL:', url);
-
-          // Open Google Maps directly
-          Linking.openURL(url)
-            .then(() => {
-              console.log('[ElevenLabs] Google Maps opened successfully');
-            })
-            .catch((err) => {
-              console.error('[ElevenLabs] Failed to open Google Maps:', err);
-            });
-
-          // Also navigate to route-display for when user returns
-          router.push('/route-display');
-
-          return 'Starting navigation now. Opening Google Maps.';
+          return 'Starting navigation now.';
         } catch (err) {
           console.error('[ElevenLabs] Failed to start navigation:', err);
           return 'Failed to start navigation';
