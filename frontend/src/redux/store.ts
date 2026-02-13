@@ -22,6 +22,7 @@ import {
   voiceReducer,
   anchorsReducer,
   navigationReducer,
+  chatHistoryReducer,
 } from './slices';
 import { setHydrated } from './slices/anchorsSlice';
 
@@ -32,7 +33,7 @@ import { setHydrated } from './slices/anchorsSlice';
 const persistConfig = {
   key: 'root',
   storage: AsyncStorage,
-  whitelist: ['anchors'], // Only persist anchors slice
+  whitelist: ['anchors', 'chatHistory'], // Persist anchors and chat history
 };
 
 /**
@@ -50,6 +51,7 @@ const rootReducer = combineReducers({
   voice: voiceReducer,
   anchors: anchorsReducer,
   navigation: navigationReducer,
+  chatHistory: chatHistoryReducer,
 });
 
 /**

@@ -18,6 +18,7 @@ export { default as loadingReducer } from './loadingSlice';
 export { default as voiceReducer } from './voiceSlice';
 export { default as anchorsReducer } from './anchorsSlice';
 export { default as navigationReducer } from './navigationSlice';
+export { default as chatHistoryReducer } from './chatHistorySlice';
 
 // Auth actions
 export {
@@ -189,3 +190,14 @@ export {
   resetNavigation,
 } from './navigationSlice';
 export type { NavigationStatus, NavigationState } from './navigationSlice';
+
+// Chat History actions
+export {
+  startSession,
+  addMessageToSession,
+  updateSessionMetadata,
+  endSession,
+  deleteSession,
+  clearAllSessions,
+} from './chatHistorySlice';
+export type { ChatHistoryState } from './chatHistorySlice';

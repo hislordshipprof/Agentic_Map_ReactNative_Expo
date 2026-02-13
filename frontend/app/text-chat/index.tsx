@@ -24,8 +24,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 import { AnimatedMessage } from '@/components/Conversation';
-import type { Message } from '@/components/Conversation';
-import { useNLUFlow, useLocation, useNavigateWithStops, useUserAnchors } from '@/hooks';
+import { useNLUFlow, useLocation, useNavigateWithStops, useUserAnchors, useChatSession } from '@/hooks';
 import { ProcessingTimeline } from '@/components/Chat/ProcessingTimeline';
 import { RoutePlanningFlow } from '@/components/Chat/RoutePlanningFlow';
 import { RouteResultCard } from '@/components/Chat/RouteResultCard';
@@ -73,7 +72,7 @@ export default function TextChatScreen(): JSX.Element {
   } = useLocation();
 
   const { setAnchor } = useUserAnchors();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const { messages, addMessage, updateRouteMetadata } = useChatSession('text');
   const [isLoading, setIsLoading] = useState(false);
   const [processingPhase, setProcessingPhase] = useState<'idle' | 'understanding' | 'planning_route'>('idle');
   const escalationInProgressRef = useRef(false);
@@ -113,11 +112,8 @@ export default function TextChatScreen(): JSX.Element {
   }, [isLoading, scrollToBottom]);
 
   const appendSystem = useCallback((text: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { id: `system_${Date.now()}`, sender: 'system', text, timestamp: Date.now() },
-    ]);
-  }, []);
+    addMessage('system', text);
+  }, [addMessage]);
 
   const handleAnchorNotSet = useCallback(
     (anchorType: string, pendingEntities: Entities, pendingOrigin: { lat: number; lng: number }) => {
@@ -184,12 +180,17 @@ export default function TextChatScreen(): JSX.Element {
           routeOptions: result.routeOptions,
           destinationName: result.destinationName,
         });
+        updateRouteMetadata({
+          destination: result.destinationName,
+          stops: entities.stops,
+          totalTimeMin: result.route?.totalTime,
+        });
       }
     }).finally(() => {
       setProcessingPhase('idle');
       setIsLoading(false);
     });
-  }, [flowState, intent, entities, currentLocation, doNavigate]);
+  }, [flowState, intent, entities, currentLocation, doNavigate, updateRouteMetadata]);
 
   // Escalating
   useEffect(() => {
@@ -241,13 +242,7 @@ export default function TextChatScreen(): JSX.Element {
 
   const handleSend = useCallback(
     async (text: string) => {
-      const userMessage: Message = {
-        id: `user_${Date.now()}`,
-        sender: 'user',
-        text,
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, userMessage]);
+      const userMessage = addMessage('user', text);
 
       if (!currentLocation && (locationError || !locationLoading)) {
         appendSystem('Please enable location services to plan your route.');
@@ -282,7 +277,7 @@ export default function TextChatScreen(): JSX.Element {
         setIsLoading(false);
       }
     },
-    [currentLocation, locationError, locationLoading, processUtterance, appendSystem, messages, resetNavigateGuard]
+    [currentLocation, locationError, locationLoading, processUtterance, appendSystem, addMessage, messages, resetNavigateGuard]
   );
 
   const handleAddressSelected = useCallback(
@@ -319,13 +314,18 @@ export default function TextChatScreen(): JSX.Element {
             routeOptions: navResult.routeOptions,
             destinationName: navResult.destinationName,
           });
+          updateRouteMetadata({
+            destination: navResult.destinationName,
+            stops: pending.pendingEntities.stops,
+            totalTimeMin: navResult.route?.totalTime,
+          });
         }
       } finally {
         setProcessingPhase('idle');
         setIsLoading(false);
       }
     },
-    [awaitingAddress, setAnchor, appendSystem, resetNavigateGuard, doNavigate],
+    [awaitingAddress, setAnchor, appendSystem, resetNavigateGuard, doNavigate, updateRouteMetadata],
   );
 
   const handleUseCurrentLocationForAnchor = useCallback(async () => {
@@ -358,13 +358,18 @@ export default function TextChatScreen(): JSX.Element {
             routeOptions: result.routeOptions,
             destinationName: result.destinationName,
           });
+          updateRouteMetadata({
+            destination: result.destinationName,
+            stops: updatedEntities.stops,
+            totalTimeMin: result.route?.totalTime,
+          });
         }
       }).finally(() => {
         setProcessingPhase('idle');
         setIsLoading(false);
       });
     },
-    [suggestionState, appendSystem, resetNavigateGuard, doNavigate, currentLocation],
+    [suggestionState, appendSystem, resetNavigateGuard, doNavigate, currentLocation, updateRouteMetadata],
   );
 
   const handleConfirmThenNavigate = useCallback(() => {
@@ -378,12 +383,17 @@ export default function TextChatScreen(): JSX.Element {
           routeOptions: result.routeOptions,
           destinationName: result.destinationName,
         });
+        updateRouteMetadata({
+          destination: result.destinationName,
+          stops: entities.stops,
+          totalTimeMin: result.route?.totalTime,
+        });
       }
     }).finally(() => {
       setProcessingPhase('idle');
       setIsLoading(false);
     });
-  }, [confirmCurrentIntent, doNavigate, entities, currentLocation]);
+  }, [confirmCurrentIntent, doNavigate, entities, currentLocation, updateRouteMetadata]);
 
   return (
     <View style={styles.container}>

@@ -56,6 +56,12 @@ export {
 // Navigate with stops hook (shared route planning logic)
 export { useNavigateWithStops } from './useNavigateWithStops';
 
+// Chat session hook (session-based chat history persistence)
+export {
+  useChatSession,
+  type ChatSessionResult,
+} from './useChatSession';
+
 // User anchors hook (home, work, etc.)
 export {
   useUserAnchors,
