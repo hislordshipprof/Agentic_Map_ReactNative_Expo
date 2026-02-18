@@ -12,6 +12,7 @@ export interface RouteBuildInput {
   orderedStops: Array< {
     place: PlaceCandidate;
     detourCostM: number;
+    detourTimeMin?: number;
     status: DetourStatus;
     order: number;
   }>;
@@ -35,6 +36,7 @@ export class RouteBuilderService {
       location: Coordinates;
       mileMarker: number;
       detourCost: number;
+      detourCostMin?: number;
       status: DetourStatus;
       category?: string;
       rating?: number;
@@ -68,6 +70,7 @@ export class RouteBuilderService {
         location: s.place.location,
         mileMarker,
         detourCost: s.detourCostM,
+        detourCostMin: s.detourTimeMin ?? Math.round((s.detourCostM / 667) * 10) / 10,
         status: s.status,
         category: s.place.types?.[0],
         rating: s.place.rating,

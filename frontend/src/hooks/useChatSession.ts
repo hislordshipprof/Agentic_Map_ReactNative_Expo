@@ -6,7 +6,7 @@
  * On unmount, ends the session (removes it if empty).
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAppDispatch, useAppSelector } from '@/redux/hooks';
 import {
   startSession,
@@ -15,6 +15,8 @@ import {
   endSession,
 } from '@/redux/slices/chatHistorySlice';
 import type { Message } from '@/components/Conversation';
+
+const EMPTY_MESSAGES: Message[] = [];
 
 interface ChatSessionResult {
   /** Current session ID (null before mount completes) */
@@ -42,13 +44,14 @@ export function useChatSession(mode: 'text' | 'voice'): ChatSessionResult {
     (state) => state.chatHistory.activeSessionId,
   );
 
-  const messages = useAppSelector((state) => {
-    if (!state.chatHistory.activeSessionId) return [];
-    const session = state.chatHistory.sessions.find(
+  const activeSession = useAppSelector((state) => {
+    if (!state.chatHistory.activeSessionId) return null;
+    return state.chatHistory.sessions.find(
       (s) => s.id === state.chatHistory.activeSessionId,
-    );
-    return session?.messages ?? [];
+    ) ?? null;
   });
+
+  const messages = activeSession?.messages ?? EMPTY_MESSAGES;
 
   // Start session on mount (with StrictMode guard)
   useEffect(() => {

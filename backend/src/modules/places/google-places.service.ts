@@ -19,9 +19,13 @@ export interface PlaceCandidate {
 }
 
 export interface PlaceCandidateWithDetour extends PlaceCandidate {
-  /** Detour duration in seconds from routingSummaries */
-  detourDurationSec?: number;
-  /** Detour distance in meters from routingSummaries */
+  /** Raw leg 0: origin → place travel time (seconds) */
+  leg0DurationSec?: number;
+  /** Raw leg 1: place → destination travel time (seconds) */
+  leg1DurationSec?: number;
+  /** Computed per-place detour: (leg0 + leg1 - directDuration) in seconds. Set by entity-resolver. */
+  sarDetourSec?: number;
+  /** Distance of leg 0 in meters */
   detourDistanceM?: number;
 }
 
@@ -154,11 +158,16 @@ export class GooglePlacesService {
    * biased by minimal detour, with per-place detour durations.
    *
    * Requires only 1 API call per stop category (vs 5+ with corridor point search).
+   *
+   * @param locationBias Optional circle bias to focus results on a section of the route.
+   *   Combined with the polyline, this further ranks results toward the bias center.
    */
   async searchAlongRoute(
     query: string,
     encodedPolyline: string,
     maxResults = 10,
+    origin?: Coordinates,
+    locationBias?: { center: Coordinates; radiusM: number },
   ): Promise<PlaceCandidateWithDetour[]> {
     if (!this.apiKey?.trim()) {
       throw new HttpException(
@@ -180,7 +189,9 @@ export class GooglePlacesService {
       .update(encodedPolyline)
       .digest('hex')
       .slice(0, 16);
-    const cacheKey = `places:sar:${query.toLowerCase()}:${polylineHash}`;
+    const originSuffix = origin ? `:${origin.lat.toFixed(3)},${origin.lng.toFixed(3)}` : '';
+    const biasSuffix = locationBias ? `:b${locationBias.center.lat.toFixed(3)},${locationBias.center.lng.toFixed(3)},${Math.round(locationBias.radiusM)}` : '';
+    const cacheKey = `places:sar:${query.toLowerCase()}:${polylineHash}${originSuffix}${biasSuffix}`;
     const cached = await this.cache.get<PlaceCandidateWithDetour[]>(cacheKey);
     if (cached) return cached.slice(0, maxResults);
 
@@ -196,13 +207,31 @@ export class GooglePlacesService {
       'routingSummaries',
     ].join(',');
 
-    const body = {
+    const body: Record<string, unknown> = {
       textQuery: query,
       searchAlongRouteParameters: {
         polyline: { encodedPolyline },
       },
       maxResultCount: 20,
     };
+
+    // Bias results toward a section of the route (e.g., route midpoint)
+    if (locationBias) {
+      body.locationBias = {
+        circle: {
+          center: { latitude: locationBias.center.lat, longitude: locationBias.center.lng },
+          radius: locationBias.radiusM,
+        },
+      };
+    }
+
+    // Pass origin for accurate leg 0 measurement (origin → place)
+    if (origin) {
+      body.routingParameters = {
+        origin: { latitude: origin.lat, longitude: origin.lng },
+        travelMode: 'DRIVE',
+      };
+    }
 
     const res = await fetch(`${NEW_PLACES_BASE}:searchText`, {
       method: 'POST',
@@ -228,14 +257,15 @@ export class GooglePlacesService {
 
     const results: PlaceCandidateWithDetour[] = places.map((p, i) => {
       const summary = summaries[i];
-      const leg = summary?.legs?.[0];
+      const leg0 = summary?.legs?.[0];
+      const leg1 = summary?.legs?.[1];
 
-      // Parse duration string like "300s" to seconds
-      let detourSec: number | undefined;
-      if (leg?.duration) {
-        const match = leg.duration.match(/^(\d+)s$/);
-        if (match) detourSec = parseInt(match[1], 10);
-      }
+      // Parse duration strings like "300s" to seconds
+      const parseDuration = (d?: string): number | undefined => {
+        if (!d) return undefined;
+        const match = d.match(/^(\d+)s$/);
+        return match ? parseInt(match[1], 10) : undefined;
+      };
 
       return {
         placeId: p.id ?? '',
@@ -249,14 +279,17 @@ export class GooglePlacesService {
         reviewCount: p.userRatingCount,
         types: p.types,
         isOpen: p.currentOpeningHours?.openNow ?? p.regularOpeningHours?.openNow,
-        detourDurationSec: detourSec,
-        detourDistanceM: leg?.distanceMeters,
+        leg0DurationSec: parseDuration(leg0?.duration),
+        leg1DurationSec: parseDuration(leg1?.duration),
+        detourDistanceM: leg0?.distanceMeters,
       };
     });
 
     this.logger.log(
       `[searchAlongRoute] "${query}": ${results.length} results` +
-      (results.length > 0 ? `, top: "${results[0].name}" (detour: ${results[0].detourDurationSec ?? '?'}s)` : ''),
+      (results.length > 0
+        ? `, top: "${results[0].name}" (leg0: ${results[0].leg0DurationSec ?? '?'}s, leg1: ${results[0].leg1DurationSec ?? '?'}s)`
+        : ''),
     );
 
     await this.cache.set(cacheKey, results, CACHE_TTL.PLACE_SEC);

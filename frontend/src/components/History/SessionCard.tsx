@@ -40,7 +40,7 @@ export const SessionCard: React.FC<SessionCardProps> = ({ session }) => {
 
   return (
     <Pressable
-      onPress={() => router.push({ pathname: '/session-transcript/index', params: { sessionId: session.id } })}
+      onPress={() => router.push({ pathname: '/session-transcript', params: { sessionId: session.id } })}
       style={({ pressed }) => [
         styles.row,
         { borderBottomColor: colors.border.light },

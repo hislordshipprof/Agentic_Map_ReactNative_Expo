@@ -159,10 +159,7 @@ export default function TextChatScreen(): JSX.Element {
 
   // HIGH confidence: navigate (handles navigate_with_stops, navigate_direct, modify_route)
   useEffect(() => {
-    if (flowState !== 'high_confidence') {
-      navigationInProgressRef.current = false;
-      return;
-    }
+    if (flowState !== 'high_confidence') return;
     if (!intent || !isNavigationIntent(intent) || !entities.destination) {
       // Non-navigation high confidence (e.g. set_anchor) — reset loading
       setProcessingPhase('idle');

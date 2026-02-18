@@ -5,7 +5,7 @@
  * Supports clearing all sessions with a confirmation alert.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,8 +19,10 @@ import type { ChatSession } from '@/types/chatHistory';
 export default function HistoryScreen(): JSX.Element {
   const colors = useThemeColors();
   const dispatch = useAppDispatch();
-  const completedTrips = useAppSelector((state) =>
-    state.chatHistory.sessions.filter((s) => s.destination != null),
+  const sessions = useAppSelector((state) => state.chatHistory.sessions);
+  const completedTrips = useMemo(
+    () => sessions.filter((s) => s.destination != null),
+    [sessions],
   );
 
   const handleClearAll = useCallback(() => {

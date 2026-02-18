@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
@@ -11,7 +11,8 @@ export const CACHE_TTL = {
 } as const;
 
 @Injectable()
-export class CacheService implements OnModuleDestroy {
+export class CacheService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(CacheService.name);
   private redis: Redis | null = null;
   private fallback = new Map<string, { v: string; exp: number }>();
 
@@ -19,11 +20,29 @@ export class CacheService implements OnModuleDestroy {
     const url = this.config.get<string>('REDIS_URL');
     if (url) {
       try {
-        this.redis = new Redis(url, { maxRetriesPerRequest: 1, lazyConnect: true });
+        this.redis = new Redis(url, {
+          maxRetriesPerRequest: 1,
+          lazyConnect: true,
+          connectTimeout: 2000,
+        });
         this.redis.on('error', () => { /* avoid unhandled ECONNREFUSED when Redis is not running */ });
       } catch {
         this.redis = null;
       }
+    }
+  }
+
+  async onModuleInit() {
+    if (!this.redis) {
+      this.logger.warn('No REDIS_URL configured — using in-memory cache');
+      return;
+    }
+    try {
+      await this.redis.connect();
+      this.logger.log('Redis connected — caching with Redis');
+    } catch {
+      this.logger.warn('Redis unavailable — falling back to in-memory cache');
+      this.redis = null;
     }
   }
 

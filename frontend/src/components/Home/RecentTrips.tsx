@@ -54,7 +54,7 @@ export const RecentTrips: React.FC = () => {
         return (
           <Pressable
             key={session.id}
-            onPress={() => router.push({ pathname: '/session-transcript/index', params: { sessionId: session.id } })}
+            onPress={() => router.push({ pathname: '/session-transcript', params: { sessionId: session.id } })}
             style={({ pressed }) => [
               styles.row,
               { borderBottomColor: colors.border.light },
