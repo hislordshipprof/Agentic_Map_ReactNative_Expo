@@ -4,6 +4,9 @@ import { GoogleMapsService } from '../../maps/google-maps.service';
 import { PlaceSearchService } from '../../places/place-search.service';
 import { GooglePlacesService } from '../../places/google-places.service';
 import type { PlaceCandidate, PlaceCandidateWithDetour } from '../../places/google-places.service';
+
+// Re-export for consumers
+export type { PlaceCandidateWithDetour };
 import type { RouteCorridor } from './route-corridor.service';
 
 export interface AnchorInput {
@@ -25,9 +28,10 @@ export interface ResolvedStop {
 /**
  * Multiple candidates per category for cluster-based search.
  * Key is the query (e.g., "Walmart"), value is array of matching places.
+ * Uses PlaceCandidateWithDetour to carry SAR detour data when available.
  */
 export interface CategoryCandidates {
-  [category: string]: PlaceCandidate[];
+  [category: string]: PlaceCandidateWithDetour[];
 }
 
 /**
@@ -42,6 +46,10 @@ export interface CorridorSearchConfig {
   resultsPerSearch?: number;
   /** Skip every N corridor points to reduce API calls (default: 1 = use all) */
   corridorPointSkip?: number;
+  /** Origin coordinates — passed to SAR for accurate leg 0 measurement */
+  origin?: Coordinates;
+  /** Direct route duration in seconds — used to compute per-place SAR detour */
+  directDurationSec?: number;
 }
 
 @Injectable()
@@ -70,41 +78,20 @@ export class EntityResolverService {
     const a = this.matchAnchor(text, anchors);
     if (a) return { name: a.name, location: a.location, source: 'anchor' };
 
-    // Try geocode first
-    const g = await this.maps.geocode(text);
-
-    // If we have a hint location, validate geocode result isn't too far away.
-    // Geocoding place names (like "Church of Pentecost") can return random
-    // addresses globally. We want to find places NEAR the hint location.
-    const MAX_GEOCODE_DISTANCE_KM = 50; // If geocode result is > 50km from hint, skip it
-    if (g && hintLocation) {
-      const distKm = this.haversineM(hintLocation, g.location) / 1000;
-      if (distKm > MAX_GEOCODE_DISTANCE_KM) {
-        this.logger.log(`[resolveDestination] Geocode result "${g.address}" is ${distKm.toFixed(0)}km from hint location, skipping to try Places search`);
-        // Don't return geocode result, fall through to place search
-      } else {
-        this.logger.log(`[resolveDestination] Geocode result "${g.address}" is ${distKm.toFixed(1)}km from hint location, using it`);
-        return { name: g.address, location: g.location, source: 'geocode' };
-      }
-    } else if (g) {
-      // No hint location - use geocode result as-is
-      return { name: g.address, location: g.location, source: 'geocode' };
-    }
-
+    // When we have a hint location, try Places API first — it returns proper
+    // place names ("Church of the Pentecost") instead of geocoded addresses
+    // ("5900 E 39th Ave, Denver, CO 80207, USA"). Falls back to geocode for
+    // actual street addresses that Places won't find.
     if (hintLocation) {
-      // OPTION E: Use small radius first to find truly nearby places
-      // Google Text Search ranks by "relevance" not distance, so a large radius
-      // can return popular far-away places. Small radius forces nearby results.
       const searchTiers = [
-        { radiusM: 5_000, label: '5km' },   // Tier 1: Very close (covers most cases)
-        { radiusM: 15_000, label: '15km' }, // Tier 2: Medium range
-        { radiusM: 50_000, label: '30km' }, // Tier 3: Fallback for rural areas
+        { radiusM: 5_000, label: '5km' },
+        { radiusM: 15_000, label: '15km' },
+        { radiusM: 50_000, label: '30km' },
       ];
 
       for (const tier of searchTiers) {
         const list = await this.placeSearch.searchPlaces(text, hintLocation, tier.radiusM, 10);
         if (list.length > 0) {
-          // Sort by distance from hintLocation and pick the nearest
           const sorted = [...list].sort((a, b) =>
             this.haversineM(hintLocation, a.location) - this.haversineM(hintLocation, b.location)
           );
@@ -115,6 +102,23 @@ export class EntityResolverService {
         }
         this.logger.log(`[resolveDestination] No "${text}" found within ${tier.label}, expanding search...`);
       }
+    }
+
+    // Fallback to geocode (for street addresses or when no hint location)
+    const g = await this.maps.geocode(text);
+
+    if (g && hintLocation) {
+      const MAX_GEOCODE_DISTANCE_KM = 50;
+      const distKm = this.haversineM(hintLocation, g.location) / 1000;
+      if (distKm > MAX_GEOCODE_DISTANCE_KM) {
+        this.logger.log(`[resolveDestination] Geocode result "${g.address}" is ${distKm.toFixed(0)}km from hint location, too far`);
+        // Fall through to throw
+      } else {
+        this.logger.log(`[resolveDestination] Geocode result "${g.address}" is ${distKm.toFixed(1)}km from hint location, using it`);
+        return { name: g.address, location: g.location, source: 'geocode' };
+      }
+    } else if (g) {
+      return { name: g.address, location: g.location, source: 'geocode' };
     }
     throw new HttpException({
       error: {
@@ -252,10 +256,33 @@ export class EntityResolverService {
     config?: CorridorSearchConfig,
   ): Promise<CategoryCandidates> {
     const maxPerCategory = config?.maxCandidatesPerCategory ?? 10;
+    const origin = config?.origin;
+    const directDurationSec = config?.directDurationSec;
+
+    // Compute route midpoint for locationBias — biases results toward center of route
+    // where detours are cheapest (going off-route near origin/dest costs more)
+    const midIndex = Math.floor(corridor.decodedPath.length / 2);
+    const routeMidpoint = corridor.decodedPath[midIndex] ?? corridor.origin;
+
+    // Scale bias radius proportionally to route length:
+    // Short routes (1km) → 500m, Medium (5km) → 2500m, Long (10km+) → 5000m cap
+    const biasRadiusM = Math.min(5000, Math.max(500, corridor.totalDistanceM / 2));
+
+    // Max detour threshold: 2x the direct duration, minimum 5 minutes
+    // Candidates beyond this are too far off-route to be useful
+    const maxDetourSec = directDurationSec != null
+      ? Math.max(300, directDurationSec * 2)
+      : undefined;
 
     this.logger.log(`[resolveStopsAlongRoute] ========== SEARCH ALONG ROUTE START ==========`);
     this.logger.log(`[resolveStopsAlongRoute] Categories: ${queries.join(', ')}`);
     this.logger.log(`[resolveStopsAlongRoute] Polyline length: ${corridor.polyline.length} chars`);
+    this.logger.log(`[resolveStopsAlongRoute] Location bias: (${routeMidpoint.lat.toFixed(4)}, ${routeMidpoint.lng.toFixed(4)}) radius=${Math.round(biasRadiusM)}m`);
+    if (directDurationSec != null) {
+      this.logger.log(`[resolveStopsAlongRoute] Direct duration: ${(directDurationSec / 60).toFixed(1)}min, max detour: ${((maxDetourSec ?? 0) / 60).toFixed(1)}min`);
+    }
+
+    const locationBias = { center: routeMidpoint, radiusM: biasRadiusM };
 
     // Search ALL categories in parallel (1 call per category)
     const searchResults = await Promise.all(
@@ -264,6 +291,8 @@ export class EntityResolverService {
           query,
           corridor.polyline,
           maxPerCategory + 5, // fetch extra to account for filtering
+          origin,
+          locationBias,
         );
         return { query, results };
       }),
@@ -291,22 +320,54 @@ export class EntityResolverService {
         );
         if (isDuplicate) continue;
 
+        // Compute per-place SAR detour if we have both legs + direct duration
+        if (directDurationSec != null && place.leg0DurationSec != null && place.leg1DurationSec != null) {
+          place.sarDetourSec = Math.max(0, place.leg0DurationSec + place.leg1DurationSec - directDurationSec);
+        }
+
+        // Detour filter: skip places with excessive detour (> 2x direct duration, min 5min)
+        // BUT always keep at least 1 candidate per category — unique places like
+        // "Makola African Market" may only have 1 result; filtering it forces a
+        // wasteful legacy fallback and loses SAR data.
+        const hasCandidate = candidates[query].length > 0;
+        if (hasCandidate && maxDetourSec != null && place.sarDetourSec != null && place.sarDetourSec > maxDetourSec) {
+          this.logger.log(
+            `[resolveStopsAlongRoute]   SKIPPED "${place.name}": detour ${Math.round(place.sarDetourSec / 60)}min exceeds max ${Math.round(maxDetourSec / 60)}min`,
+          );
+          continue;
+        }
+
         seen.add(place.placeId);
         candidates[query].push(place);
 
-        const detourInfo = place.detourDurationSec != null
-          ? ` (detour: ${Math.round(place.detourDurationSec / 60)}min)`
-          : '';
+        const detourInfo = place.sarDetourSec != null
+          ? ` (detour: ${Math.round(place.sarDetourSec / 60)}min)`
+          : place.leg0DurationSec != null
+            ? ` (leg0: ${Math.round(place.leg0DurationSec / 60)}min)`
+            : '';
         this.logger.log(
           `[resolveStopsAlongRoute]   Found "${query}": "${place.name}" at (${place.location.lat.toFixed(4)}, ${place.location.lng.toFixed(4)})${detourInfo}`,
         );
       }
     }
 
+    // Sort each category by detour (ascending) so closest-first for cluster scoring
+    for (const query of queries) {
+      candidates[query].sort((a, b) => {
+        // Prefer candidates with known detour; unknowns go to end
+        if (a.sarDetourSec != null && b.sarDetourSec != null) return a.sarDetourSec - b.sarDetourSec;
+        if (a.sarDetourSec != null) return -1;
+        if (b.sarDetourSec != null) return 1;
+        return 0;
+      });
+    }
+
     // Log summary
     this.logger.log(`[resolveStopsAlongRoute] ========== RESULTS ==========`);
     for (const query of queries) {
-      this.logger.log(`[resolveStopsAlongRoute] ${query}: ${candidates[query].length} candidates`);
+      const best = candidates[query][0];
+      const bestInfo = best?.sarDetourSec != null ? ` (best detour: ${Math.round(best.sarDetourSec / 60)}min)` : '';
+      this.logger.log(`[resolveStopsAlongRoute] ${query}: ${candidates[query].length} candidates${bestInfo}`);
     }
     this.logger.log(`[resolveStopsAlongRoute] ========== SEARCH ALONG ROUTE END ==========`);
 
@@ -322,7 +383,7 @@ export class EntityResolverService {
     corridor: RouteCorridor,
     config?: CorridorSearchConfig,
   ): Promise<CategoryCandidates> {
-    const cfg: Required<CorridorSearchConfig> = {
+    const cfg = {
       searchRadiusM: config?.searchRadiusM ?? 5000,
       maxCandidatesPerCategory: config?.maxCandidatesPerCategory ?? 10,
       resultsPerSearch: config?.resultsPerSearch ?? 5,
@@ -466,6 +527,11 @@ export class EntityResolverService {
 
     // Direct containment: "walmart supercenter" contains "walmart"
     if (name.includes(q)) return true;
+
+    // Space-stripped containment: "kingsoopers" matches "King Soopers"
+    const nameNoSpaces = name.replace(/\s+/g, '');
+    const qNoSpaces = q.replace(/\s+/g, '');
+    if (nameNoSpaces.includes(qNoSpaces) || qNoSpaces.includes(nameNoSpaces)) return true;
 
     // Check each query word (skip short words like "of", "the")
     const queryWords = q.split(/\s+/).filter((w) => w.length > 2);

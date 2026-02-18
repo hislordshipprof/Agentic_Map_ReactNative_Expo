@@ -154,6 +154,7 @@ export default function RootLayout(): JSX.Element {
                         <Stack.Screen name="navigation/index" options={{ headerShown: false }} />
                         <Stack.Screen name="voice-assistant/index" options={{ headerShown: false }} />
                         <Stack.Screen name="text-chat/index" options={{ headerShown: false }} />
+                        <Stack.Screen name="session-transcript/index" options={{ headerShown: false }} />
                         <Stack.Screen name="+not-found" />
                       </Stack>
                       <LoadingOverlay fullScreen />

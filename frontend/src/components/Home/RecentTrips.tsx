@@ -1,7 +1,8 @@
 /**
- * RecentTrips - Recent query list with timestamps and stop counts
+ * RecentTrips - Recent session list with timestamps and stop counts
  *
  * Icons reflect trip type (home, work, coffee, multi-stop). "View all" in Primary Blue.
+ * Pulls real data from the chatHistory Redux slice.
  */
 
 import React from 'react';
@@ -10,27 +11,33 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '@/theme/useThemeColors';
 import { FontFamily, FontSize, Spacing } from '@/theme';
-
-const SAMPLE_TRIPS = [
-  { id: '1', text: 'Home via Starbucks', time: 'Yesterday', stops: 2 },
-  { id: '2', text: 'Work', time: '2 days ago', stops: 0 },
-  { id: '3', text: 'Coffee on the way to work', time: '3 days ago', stops: 1 },
-];
+import { useAppSelector } from '@/redux/hooks';
+import { formatRelativeTime } from '@/utils/formatRelativeTime';
+import type { ChatSession } from '@/types/chatHistory';
 
 type TripIconName = keyof typeof Ionicons.glyphMap;
 
-function getTripIcon(text: string, stops: number): TripIconName {
-  const lower = text.toLowerCase();
+function getTripIcon(session: ChatSession): TripIconName {
+  const lower = session.title.toLowerCase();
   if (lower.includes('home') && !lower.includes('work')) return 'home';
   if (lower.includes('work') && !lower.includes('home')) return 'briefcase';
   if (lower.includes('coffee') || lower.includes('starbucks') || lower.includes('cafe')) return 'cafe';
-  if (stops > 1 || lower.includes(' via ')) return 'git-branch-outline';
+  const stopCount = session.stops?.length ?? 0;
+  if (stopCount > 1 || lower.includes(' via ')) return 'git-branch-outline';
   return 'navigate';
 }
 
 export const RecentTrips: React.FC = () => {
   const colors = useThemeColors();
   const router = useRouter();
+  const sessions = useAppSelector((state) => state.chatHistory.sessions);
+
+  // Only show sessions with a completed route
+  const recentSessions = sessions
+    .filter((s) => s.destination != null)
+    .slice(0, 3);
+
+  if (recentSessions.length === 0) return null;
 
   return (
     <View style={styles.container}>
@@ -42,33 +49,38 @@ export const RecentTrips: React.FC = () => {
         </Pressable>
       </View>
 
-      {SAMPLE_TRIPS.map((trip) => (
-        <Pressable
-          key={trip.id}
-          style={({ pressed }) => [
-            styles.row,
-            { borderBottomColor: colors.border.light },
-            pressed && styles.rowPressed,
-          ]}
-        >
-          <View style={[styles.iconCircle, { backgroundColor: `${colors.design.primaryBlue}20` }]}>
-            <Ionicons
-              name={getTripIcon(trip.text, trip.stops)}
-              size={20}
-              color={colors.design.primaryBlue}
-            />
-          </View>
-          <View style={styles.textCol}>
-            <Text style={[styles.tripText, { color: colors.text.primary }]} numberOfLines={1}>
-              {trip.text}
-            </Text>
-            <Text style={[styles.tripMeta, { color: colors.text.tertiary }]}>
-              {trip.time}{trip.stops > 0 ? ` \u2022 ${trip.stops} stop${trip.stops > 1 ? 's' : ''}` : ''}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={colors.text.tertiary} />
-        </Pressable>
-      ))}
+      {recentSessions.map((session) => {
+        const stopCount = session.stops?.length ?? 0;
+        return (
+          <Pressable
+            key={session.id}
+            onPress={() => router.push({ pathname: '/session-transcript', params: { sessionId: session.id } })}
+            style={({ pressed }) => [
+              styles.row,
+              { borderBottomColor: colors.border.light },
+              pressed && styles.rowPressed,
+            ]}
+          >
+            <View style={[styles.iconCircle, { backgroundColor: `${colors.design.primaryBlue}20` }]}>
+              <Ionicons
+                name={getTripIcon(session)}
+                size={20}
+                color={colors.design.primaryBlue}
+              />
+            </View>
+            <View style={styles.textCol}>
+              <Text style={[styles.tripText, { color: colors.text.primary }]} numberOfLines={1}>
+                {session.title}
+              </Text>
+              <Text style={[styles.tripMeta, { color: colors.text.tertiary }]}>
+                {formatRelativeTime(session.updatedAt)}
+                {stopCount > 0 ? ` \u2022 ${stopCount} stop${stopCount > 1 ? 's' : ''}` : ''}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.text.tertiary} />
+          </Pressable>
+        );
+      })}
     </View>
   );
 };

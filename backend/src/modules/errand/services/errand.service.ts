@@ -120,16 +120,24 @@ export class ErrandService {
         const nearestStop = nearestStopResults[0].place;
         this.logger.log(`[navigateWithStops] STEP 1b: Found nearest "${firstStopName}" at (${nearestStop.location.lat}, ${nearestStop.location.lng})`);
 
-        // Check if optimistic destination is close enough to nearest stop
-        const destToStopDist = haversineM(optimisticDest.location, nearestStop.location);
-        if (destToStopDist < 50_000) {
-          // Destination is within 50km of nearest stop - use optimistic result
+        // Stretch-ratio check: detect "boomerang" patterns where the stop
+        // pulls the trip far off the direct origin→dest line.
+        // ratio ≈ 1.0 → stop is on-route; ratio > 2.0 → significant detour
+        const originToStop = haversineM(inp.origin, nearestStop.location);
+        const stopToDest = haversineM(nearestStop.location, optimisticDest.location);
+        const originToDest = haversineM(inp.origin, optimisticDest.location);
+        const stretchRatio = originToDest > 0
+          ? (originToStop + stopToDest) / originToDest
+          : 1;
+
+        if (stretchRatio <= 2.0) {
+          // Stop is roughly on-route — keep optimistic destination
           dest = optimisticDest;
-          this.logger.log(`[navigateWithStops] STEP 1c: Using parallel-resolved destination "${dest.name}" at (${dest.location.lat}, ${dest.location.lng}) (${(destToStopDist / 1000).toFixed(1)}km from stop)`);
+          this.logger.log(`[navigateWithStops] STEP 1c: Using parallel-resolved destination "${dest.name}" at (${dest.location.lat}, ${dest.location.lng}) (stretchRatio=${stretchRatio.toFixed(2)})`);
         } else {
-          // Destination is far from stop - re-resolve near stop for better clustering
+          // Stop pulls trip off-route — re-resolve destination near the stop
           dest = await this.entity.resolveDestination(inp.destination.name, anchors, nearestStop.location);
-          this.logger.log(`[navigateWithStops] STEP 1c: Re-resolved destination "${dest.name}" NEAR STOP at (${dest.location.lat}, ${dest.location.lng})`);
+          this.logger.log(`[navigateWithStops] STEP 1c: Re-resolved destination "${dest.name}" NEAR STOP at (${dest.location.lat}, ${dest.location.lng}) (stretchRatio=${stretchRatio.toFixed(2)}, was boomerang)`);
         }
       } else {
         // Fallback: no stop found, use optimistic destination
@@ -146,6 +154,7 @@ export class ErrandService {
       : undefined;
     const routeCorridor = await this.corridor.extractCorridor(inp.origin, dest.location, corridorConfig);
     const bufferM = this.detour.calculateBuffer(routeCorridor.totalDistanceM);
+    const directDurationSec = routeCorridor.totalDurationMin * 60;
 
     this.logger.log(`[navigateWithStops]   Direct distance: ${(routeCorridor.totalDistanceM / 1609.34).toFixed(1)} miles`);
     this.logger.log(`[navigateWithStops]   Direct duration: ${routeCorridor.totalDurationMin.toFixed(1)} min`);
@@ -185,11 +194,17 @@ export class ErrandService {
     // STEP 3: Multi-candidate search along corridor
     this.logger.log(`[navigateWithStops] STEP 3: Searching for candidates along corridor...`);
     const stopQueries = inp.stops.map(s => s.name);
-    // Voice mode: fewer candidates (4 vs 8) = fewer combinations (16 vs 64), faster clustering
     const maxCandidates = inp.voiceMode ? 4 : 8;
+
+    if (routeCorridor.totalDistanceM < 3000) {
+      this.logger.log(`[navigateWithStops]   Short route (${(routeCorridor.totalDistanceM / 1000).toFixed(1)}km)`);
+    }
+
     const candidates = await this.entity.resolveStopsAlongCorridor(stopQueries, routeCorridor, {
       searchRadiusM: 5000,
       maxCandidatesPerCategory: maxCandidates,
+      origin: inp.origin,
+      directDurationSec,
     });
 
     // Check which categories found results
@@ -236,12 +251,14 @@ export class ErrandService {
       };
     }
 
-    // STEP 4: Detect clusters (find combinations that are close together)
-    this.logger.log(`[navigateWithStops] STEP 4: Detecting stop clusters...`);
+    // STEP 4: Detect clusters with SAR-aware scoring
+    this.logger.log(`[navigateWithStops] STEP 4: Detecting stop clusters (SAR-aware scoring)...`);
     const clusters = this.cluster.detectClusters(candidates, routeCorridor, {
-      tightnessWeight: 0.6,
-      routeProximityWeight: 0.4,
-      maxClusters: 3, // Reduced from 5 to speed up evaluation
+      tightnessWeight: 0.3,
+      routeProximityWeight: 0.2,
+      sarDetourWeight: 0.5,
+      maxClusters: 5,
+      directDurationSec,
     });
 
     if (clusters.length === 0) {
@@ -251,13 +268,35 @@ export class ErrandService {
 
     this.logger.log(`[navigateWithStops]   Found ${clusters.length} clusters`);
     clusters.slice(0, 3).forEach((c, i) => {
-      this.logger.log(`[navigateWithStops]   Cluster ${i + 1}: radius=${(c.maxPairwiseDistanceM / 1000).toFixed(1)}km, routeDist=${(c.distanceFromRouteM / 1000).toFixed(1)}km, stops=${c.stops.map(s => s.name).join(', ')}`);
+      const detourStr = c.estimatedDetourMin != null ? `, estDetour=+${c.estimatedDetourMin.toFixed(1)}min` : '';
+      this.logger.log(`[navigateWithStops]   Cluster ${i + 1}: radius=${(c.maxPairwiseDistanceM / 1000).toFixed(1)}km, routeDist=${(c.distanceFromRouteM / 1000).toFixed(1)}km${detourStr}, stops=${c.stops.map(s => s.name).join(', ')}`);
     });
 
-    // STEP 5: Evaluate top clusters with actual driving time (PARALLELIZED)
-    this.logger.log(`[navigateWithStops] STEP 5: Evaluating top ${Math.min(clusters.length, 3)} clusters in parallel...`);
+    // STEP 5: Adaptive cluster evaluation
+    // If SAR data gives clear winner (gap > 3min), only compute Directions for #1.
+    // If close race (gap ≤ 3min), compute for top 2 in parallel.
+    const top1 = clusters[0];
+    const top2 = clusters.length > 1 ? clusters[1] : undefined;
+    const hasSarData = top1.estimatedDetourMin != null;
+    const gap = hasSarData && top2?.estimatedDetourMin != null && top1.estimatedDetourMin != null
+      ? top2.estimatedDetourMin - top1.estimatedDetourMin
+      : 0;
+    const isClearWinner = hasSarData && gap > 3;
+
+    let clustersToEvaluate: typeof clusters;
+    if (isClearWinner || inp.voiceMode) {
+      clustersToEvaluate = [top1];
+      this.logger.log(`[navigateWithStops] STEP 5: Clear winner (gap=${gap.toFixed(1)}min) — evaluating 1 cluster`);
+    } else if (hasSarData) {
+      clustersToEvaluate = clusters.slice(0, 2);
+      this.logger.log(`[navigateWithStops] STEP 5: Close race (gap=${gap.toFixed(1)}min) — evaluating top 2 clusters in parallel`);
+    } else {
+      clustersToEvaluate = clusters.slice(0, 3);
+      this.logger.log(`[navigateWithStops] STEP 5: No SAR data — evaluating top 3 clusters in parallel`);
+    }
+
     const evaluatedClusters = await this.evaluateClustersWithDrivingTime(
-      clusters.slice(0, 3), // Reduced from 5 to 3 for faster response
+      clustersToEvaluate,
       inp.origin,
       dest.location,
       routeCorridor.totalDurationMin,
@@ -520,12 +559,14 @@ export class ErrandService {
   ): Array<{
     place: PlaceCandidate;
     detourCostM: number;
+    detourTimeMin: number;
     status: ReturnType<DetourBufferService['getDetourStatus']>;
     order: number;
   }> {
     const result: Array<{
       place: PlaceCandidate;
       detourCostM: number;
+      detourTimeMin: number;
       status: ReturnType<DetourBufferService['getDetourStatus']>;
       order: number;
     }> = [];
@@ -537,11 +578,20 @@ export class ErrandService {
       const legOut = fullDir?.legs[i + 1]?.distanceM ?? 0;
       const directSeg = haversineM(prev, next);
       const detourCostM = Math.max(0, legIn + legOut - directSeg);
+
+      // Time-based detour: actual leg times vs estimated direct time
+      const legInTime = fullDir?.legs[i]?.durationMin ?? 0;
+      const legOutTime = fullDir?.legs[i + 1]?.durationMin ?? 0;
+      const AVG_SPEED_M_PER_MIN = 667; // ~40km/h urban
+      const directTimeMin = directSeg / AVG_SPEED_M_PER_MIN;
+      const detourTimeMin = Math.max(0, legInTime + legOutTime - directTimeMin);
+
       const status = this.detour.getDetourStatus(detourCostM, bufferM);
 
       result.push({
         place: orderedStops[i],
         detourCostM,
+        detourTimeMin: Math.round(detourTimeMin * 10) / 10,
         status,
         order: i + 1,
       });

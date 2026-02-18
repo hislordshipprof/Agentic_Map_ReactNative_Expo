@@ -25,3 +25,6 @@ export * from './api';
 
 // Offline types
 export * from './offline';
+
+// Chat history types
+export * from './chatHistory';

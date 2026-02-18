@@ -23,8 +23,7 @@ import { StreamingChatBubble } from '@/components/VoiceAssistant/StreamingChatBu
 import { VoiceBottomBar } from '@/components/VoiceAssistant/VoiceBottomBar';
 import { ProcessingIndicator } from '@/components/VoiceAssistant/ProcessingIndicator';
 import { RoutePlanningFlow } from '@/components/Chat/RoutePlanningFlow';
-import { useUnifiedVoice, useNLUFlow, useLocation, useNavigateWithStops } from '@/hooks';
-import type { Message } from '@/components/Conversation';
+import { useUnifiedVoice, useNLUFlow, useLocation, useNavigateWithStops, useChatSession } from '@/hooks';
 
 export default function VoiceAssistantScreen(): JSX.Element {
   const router = useRouter();
@@ -58,7 +57,7 @@ export default function VoiceAssistantScreen(): JSX.Element {
 
   const { currentLocation } = useLocation();
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const { messages, addMessage, updateRouteMetadata } = useChatSession('voice');
   const [processingPhase, setProcessingPhase] = useState<'idle' | 'thinking' | 'optimizing'>('idle');
   const [streamingMessage, setStreamingMessage] = useState<string>('');
   const lastAgentMessageRef = useRef<string>('');
@@ -71,25 +70,32 @@ export default function VoiceAssistantScreen(): JSX.Element {
   const planningBackendDoneRef = useRef(false);
 
   const appendSystem = useCallback((text: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { id: `sys_${Date.now()}`, sender: 'system', text, timestamp: Date.now() },
-    ]);
+    addMessage('system', text);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-  }, []);
+  }, [addMessage]);
 
   const appendUser = useCallback((text: string) => {
-    setMessages((prev) => [
-      ...prev,
-      { id: `user_${Date.now()}`, sender: 'user', text, timestamp: Date.now() },
-    ]);
+    addMessage('user', text);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-  }, []);
+  }, [addMessage]);
 
   const {
     doNavigate,
     resetNavigateGuard,
   } = useNavigateWithStops({ onSystemMessage: appendSystem });
+
+  // Track route metadata when voiceRoute arrives
+  const lastTrackedRouteRef = useRef<typeof voiceRoute>(null);
+  useEffect(() => {
+    if (voiceRoute && voiceRoute !== lastTrackedRouteRef.current) {
+      lastTrackedRouteRef.current = voiceRoute;
+      updateRouteMetadata({
+        destination: planningData?.destination ?? undefined,
+        stops: planningData?.stops,
+        totalTimeMin: voiceRoute.totalTime,
+      });
+    }
+  }, [voiceRoute, planningData, updateRouteMetadata]);
 
   // Planning animation lifecycle: show until both backend + animation finish
   useEffect(() => {

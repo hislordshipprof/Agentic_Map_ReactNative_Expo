@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Coordinates } from '../../../common/types';
-import type { PlaceCandidate } from '../../places/google-places.service';
+import type { PlaceCandidate, PlaceCandidateWithDetour } from '../../places/google-places.service';
 import type { CategoryCandidates } from './entity-resolver.service';
 import type { RouteCorridor } from './route-corridor.service';
 
@@ -24,27 +24,35 @@ export interface StopCluster {
   distanceFromRouteM: number;
   /** Cluster score (lower is better) */
   score: number;
+  /** Estimated combined detour from SAR data (minutes). Undefined if SAR data unavailable. */
+  estimatedDetourMin?: number;
 }
 
 /**
  * Configuration for cluster detection.
  */
 export interface ClusterConfig {
-  /** Weight for cluster tightness in scoring (0-1, default: 0.5) */
+  /** Weight for cluster tightness in scoring (0-1, default: 0.3) */
   tightnessWeight?: number;
-  /** Weight for route proximity in scoring (0-1, default: 0.5) */
+  /** Weight for route proximity in scoring (0-1, default: 0.2) */
   routeProximityWeight?: number;
+  /** Weight for SAR detour in scoring (0-1, default: 0.5). Only used when SAR data available. */
+  sarDetourWeight?: number;
   /** Maximum number of clusters to return (default: 10) */
   maxClusters?: number;
   /** Maximum combinations to evaluate before pruning (default: 500) */
   maxCombinations?: number;
+  /** Direct route duration in seconds — for SAR-based detour scoring */
+  directDurationSec?: number;
 }
 
 const DEFAULT_CONFIG: Required<ClusterConfig> = {
-  tightnessWeight: 0.5,
-  routeProximityWeight: 0.5,
+  tightnessWeight: 0.3,
+  routeProximityWeight: 0.2,
+  sarDetourWeight: 0.5,
   maxClusters: 10,
   maxCombinations: 500,
+  directDurationSec: 0,
 };
 
 @Injectable()
@@ -124,7 +132,8 @@ export class ClusterService {
 
     this.logger.log(`[detectClusters] ========== TOP CLUSTERS ==========`);
     topClusters.slice(0, 5).forEach((c, i) => {
-      this.logger.log(`[detectClusters] #${i + 1}: score=${c.score.toFixed(2)}, radius=${(c.radiusM / 1000).toFixed(1)}km, routeDist=${(c.distanceFromRouteM / 1000).toFixed(1)}km`);
+      const detourStr = c.estimatedDetourMin != null ? `, estDetour=${c.estimatedDetourMin.toFixed(1)}min` : '';
+      this.logger.log(`[detectClusters] #${i + 1}: score=${c.score.toFixed(2)}, radius=${(c.radiusM / 1000).toFixed(1)}km, routeDist=${(c.distanceFromRouteM / 1000).toFixed(1)}km${detourStr}`);
       this.logger.log(`[detectClusters]     stops: ${c.stops.map(s => s.name).join(', ')}`);
     });
     this.logger.log(`[detectClusters] ========== CLUSTER DETECTION END ==========`);
@@ -134,6 +143,7 @@ export class ClusterService {
 
   /**
    * Create clusters for single-category search (each candidate is its own cluster).
+   * Propagates SAR detour data so the errand service can use it for adaptive evaluation.
    */
   private createSingleCategoryClusters(
     places: PlaceCandidate[],
@@ -143,6 +153,21 @@ export class ClusterService {
   ): StopCluster[] {
     return places.map((place, i) => {
       const distFromRoute = this.distanceToRoute(place.location, corridor);
+      const withDetour = place as PlaceCandidateWithDetour;
+      const estimatedDetourMin = withDetour.sarDetourSec != null
+        ? withDetour.sarDetourSec / 60
+        : undefined;
+
+      // Score using SAR detour when available, otherwise fall back to route proximity
+      const normalizedRouteDist = distFromRoute / 10000;
+      let score: number;
+      if (estimatedDetourMin != null) {
+        const sarScore = estimatedDetourMin / 20;
+        score = normalizedRouteDist * cfg.routeProximityWeight + sarScore * cfg.sarDetourWeight;
+      } else {
+        score = normalizedRouteDist * (cfg.routeProximityWeight + cfg.sarDetourWeight);
+      }
+
       return {
         id: `cluster-single-${i}`,
         stops: [place],
@@ -151,7 +176,8 @@ export class ClusterService {
         radiusM: 0,
         maxPairwiseDistanceM: 0,
         distanceFromRouteM: distFromRoute,
-        score: distFromRoute * cfg.routeProximityWeight,
+        score,
+        estimatedDetourMin,
       };
     }).sort((a, b) => a.score - b.score).slice(0, cfg.maxClusters);
   }
@@ -217,6 +243,7 @@ export class ClusterService {
 
   /**
    * Evaluate a cluster combination and calculate its metrics.
+   * Uses SAR two-leg detour data when available (insertion formula for multi-stop).
    */
   private evaluateCluster(
     stops: PlaceCandidate[],
@@ -230,14 +257,35 @@ export class ClusterService {
     const maxPairwiseDistanceM = this.calculateMaxPairwiseDistance(stops);
     const distanceFromRouteM = this.distanceToRoute(centroid, corridor);
 
-    // Calculate score (lower is better)
-    // Normalize distances to roughly 0-1 range for fair weighting
-    const normalizedTightness = maxPairwiseDistanceM / 10000; // Assume 10km is "bad"
-    const normalizedRouteDist = distanceFromRouteM / 10000;   // Assume 10km is "bad"
+    // Geometric score (normalized to ~0-1)
+    const normalizedTightness = maxPairwiseDistanceM / 10000;
+    const normalizedRouteDist = distanceFromRouteM / 10000;
+
+    // SAR detour-based score (if available)
+    const estimatedDetourMin = this.estimateClusterDetour(stops);
+    let sarScore: number;
+    let effectiveTightnessWeight = cfg.tightnessWeight;
+    let effectiveRouteWeight = cfg.routeProximityWeight;
+
+    if (estimatedDetourMin != null) {
+      // Normalize detour: 20min detour → 1.0
+      sarScore = estimatedDetourMin / 20;
+      // Use SAR-weighted blend
+    } else {
+      // No SAR data — redistribute SAR weight to geometric scoring
+      sarScore = 0;
+      const geoTotal = cfg.tightnessWeight + cfg.routeProximityWeight;
+      if (geoTotal > 0) {
+        const extraWeight = cfg.sarDetourWeight;
+        effectiveTightnessWeight += extraWeight * (cfg.tightnessWeight / geoTotal);
+        effectiveRouteWeight += extraWeight * (cfg.routeProximityWeight / geoTotal);
+      }
+    }
 
     const score =
-      normalizedTightness * cfg.tightnessWeight +
-      normalizedRouteDist * cfg.routeProximityWeight;
+      normalizedTightness * effectiveTightnessWeight +
+      normalizedRouteDist * effectiveRouteWeight +
+      (estimatedDetourMin != null ? sarScore * cfg.sarDetourWeight : 0);
 
     return {
       id: `cluster-${index}`,
@@ -248,7 +296,48 @@ export class ClusterService {
       maxPairwiseDistanceM,
       distanceFromRouteM,
       score,
+      estimatedDetourMin,
     };
+  }
+
+  /**
+   * Estimate combined detour for a cluster using SAR per-place detours.
+   * Uses insertion formula: max(dA,dB) + min(dA,dB) * f(haversine_AB)
+   * where f(x) = x / (x + HALF_SAT_M). Returns undefined if SAR data missing.
+   */
+  private estimateClusterDetour(stops: PlaceCandidate[]): number | undefined {
+    const HALF_SAT_M = 1500; // At 1.5km inter-stop distance, 50% of second stop's detour is added
+
+    // Extract SAR detour seconds from each stop (if available)
+    const detoursSec: number[] = [];
+    for (const stop of stops) {
+      const withDetour = stop as PlaceCandidateWithDetour;
+      if (withDetour.sarDetourSec == null) return undefined;
+      detoursSec.push(withDetour.sarDetourSec);
+    }
+
+    if (detoursSec.length === 0) return undefined;
+    if (detoursSec.length === 1) return detoursSec[0] / 60;
+
+    // Sort descending so the largest detour is the base
+    const sorted = [...detoursSec].sort((a, b) => b - a);
+    let combinedSec = sorted[0]; // Start with largest detour
+
+    // Add each subsequent stop using insertion formula
+    for (let i = 1; i < sorted.length; i++) {
+      // Find minimum inter-stop distance to any already-included stop
+      let minDist = Infinity;
+      for (let j = 0; j < i; j++) {
+        const dist = this.haversineM(stops[i].location, stops[j].location);
+        if (dist < minDist) minDist = dist;
+      }
+
+      // Insertion factor: 0 (collocated) → 1 (far apart)
+      const f = minDist / (minDist + HALF_SAT_M);
+      combinedSec += sorted[i] * f;
+    }
+
+    return combinedSec / 60;
   }
 
   /**
